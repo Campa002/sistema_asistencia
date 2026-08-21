@@ -15,6 +15,9 @@ $turno = $portal['turnoResumen'];
 <link rel="shortcut icon" href="../../public/assets/img/logo.webp" type="image/x-icon">
 <div id="preceptor-portal-root">
 
+<!-- Notificaciones propias (reemplaza alert()/confirm() del navegador) -->
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
+
 
 <!-- TOPBAR -->
 <header class="topbar">
@@ -142,7 +145,7 @@ $turno = $portal['turnoResumen'];
           <thead>
             <tr>
               <th>CURSO</th>
-              <th>ESTADO</th>
+              <th>MATERIAS DE HOY</th>
               <th>ACCIÓN</th>
             </tr>
           </thead>
@@ -153,17 +156,31 @@ $turno = $portal['turnoResumen'];
               <tr>
                 <td><?= e($c['name']) ?> — <?= e($c['spec']) ?></td>
                 <td>
-                  <?php if ($c['status'] === 'completa'): ?>
-                    <span class="badge badge-green">Completo</span>
-                  <?php else: ?>
-                    <span class="badge badge-yellow">Pendiente</span>
-                  <?php endif; ?>
+                  <?php if (empty($c['modulosHoy'])): ?>
+                    <span class="badge badge-gray">Sin clases hoy</span>
+                  <?php else: foreach ($c['modulosHoy'] as $m): ?>
+                    <div style="margin-bottom:4px">
+                      <?php if ($m['status'] === 'completa'): ?>
+                        <span class="badge badge-green">Completa</span>
+                      <?php elseif ($m['status'] === 'no_habilitado'): ?>
+                        <span class="badge badge-gray">Aún no habilitada</span>
+                      <?php else: ?>
+                        <span class="badge badge-yellow">Pendiente</span>
+                      <?php endif; ?>
+                      <?= e($m['materiaNombre']) ?> (<?= e($m['horario']) ?>)
+                    </div>
+                  <?php endforeach; endif; ?>
                 </td>
                 <td>
-                  <?php if ($c['status'] === 'completa'): ?>
-                    <span class="action-link" onclick="showView('historial')">Ver lista</span>
-                  <?php else: ?>
+                  <?php
+                    $hayModuloParaTomar = !empty(array_filter($c['modulosHoy'], fn($m) => $m['status'] === 'pendiente'));
+                  ?>
+                  <?php if ($hayModuloParaTomar): ?>
                     <span class="action-link" onclick="openTomarAsistencia(<?= (int) $c['id'] ?>)">Tomar</span>
+                  <?php elseif ($c['totalModulosHoy'] > 0): ?>
+                    <span class="action-link" onclick="irAHistorialDeCurso('<?= e(addslashes($c['name'])) ?>')">Ver / Editar</span>
+                  <?php else: ?>
+                    <span style="color:var(--gray-400);font-size:12px">—</span>
                   <?php endif; ?>
                 </td>
               </tr>
@@ -292,12 +309,12 @@ $turno = $portal['turnoResumen'];
       <div class="hist-stat-row">
         <div class="hist-stat-dark">
           <div class="hist-lbl white">Total finalizadas</div>
-          <div class="hist-num" style="color:#fff">142</div>
+          <div class="hist-num" style="color:#fff"><?= e($portal['totalFinalizadas']) ?></div>
         </div>
         <div class="hist-stat-light">
           <div>
             <div class="hist-lbl gray">Modificadas</div>
-            <div class="hist-num blue">12</div>
+            <div class="hist-num blue"><?= e($portal['totalModificadas']) ?></div>
           </div>
           <button style="background:none;border:none;cursor:pointer;color:var(--blue-accent)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -306,7 +323,7 @@ $turno = $portal['turnoResumen'];
       </div>
 
       <div style="display:flex;gap:10px;margin-bottom:16px">
-        <input class="search-input" type="text" placeholder="🔍  Buscar curso ...">
+        <input class="search-input" type="text" placeholder="🔍  Buscar curso ..." id="hist-search" oninput="filterHistorial(this.value)">
       </div>
 
       <div class="filter-bar">
@@ -438,7 +455,7 @@ $turno = $portal['turnoResumen'];
               Cerrar Sesión
             </button>
           </form>
-          <button class="btn btn-danger" onclick="alert('Función: Indicar ausencia')">Indicar ausencia</button>
+          <button class="btn btn-danger" onclick="abrirModalAusencia()">Indicar ausencia</button>
         </div>
         <hr class="div">
         <div class="profile-data-row">
@@ -447,7 +464,7 @@ $turno = $portal['turnoResumen'];
         </div>
         <div class="profile-data-row">
           <div class="profile-data-label">Fecha de Registro</div>
-          <div class="profile-data-val"><?= e($usuario['created_at'] ? format_date_long_argentina($usuario['created_at']) : '—') ?></div>
+          <div class="profile-data-val"><?= e($usuario['created_at'] ? date('d/m/Y', strtotime($usuario['created_at'])) : '—') ?></div>
         </div>
         <div class="profile-data-row" style="border-bottom:none">
           <div class="profile-data-label">Estado Administrativo</div>
@@ -482,6 +499,77 @@ $turno = $portal['turnoResumen'];
   </main>
 </div>
 
+<!-- ══════════ MODAL: Ver Detalle / Editar Asistencia (Historial) ══════════ -->
+<div class="modal-overlay" id="modal-detalle-overlay" style="display:none" onclick="if(event.target===this) cerrarModalDetalle()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="detalle-curso">—</div>
+        <div class="modal-sub" id="detalle-sub">—</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="cerrarModalDetalle()">Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div id="detalle-solo-lectura-aviso" class="modal-aviso" style="display:none">
+        Este registro ya superó el período editable (30 días). Se muestra solo para consulta.
+      </div>
+      <table class="attend-table">
+        <thead>
+          <tr><th>ALUMNO</th><th>REGISTRO DE ASISTENCIA</th></tr>
+        </thead>
+        <tbody id="detalle-tbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" onclick="cerrarModalDetalle()">Cerrar</button>
+      <button type="button" class="btn btn-dark" id="btn-guardar-edicion" onclick="guardarEdicionAsistencia()" style="display:none">Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: Nuevo Mensaje ══════════ -->
+<div class="modal-overlay" id="modal-nuevo-msg-overlay" style="display:none" onclick="if(event.target===this) cerrarModalNuevoMensaje()">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header">
+      <div class="modal-title">Nuevo Mensaje</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="cerrarModalNuevoMensaje()">Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">DESTINATARIO</div>
+      <select class="attend-select" id="nuevo-msg-destinatario" style="width:100%;margin-bottom:14px"></select>
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">MENSAJE</div>
+      <textarea class="msg-input" style="width:100%" rows="4" id="nuevo-msg-texto" placeholder="Escribí tu mensaje..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" onclick="cerrarModalNuevoMensaje()">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="btn-enviar-nuevo-msg" onclick="enviarNuevoMensaje()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: Indicar Ausencia ══════════ -->
+<div class="modal-overlay" id="modal-ausencia-overlay" style="display:none" onclick="if(event.target===this) cerrarModalAusencia()">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Indicar Ausencia</div>
+        <div class="modal-sub">Genera pedidos de reemplazo para el Directivo en los cursos/materias sin cubrir ese día.</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="cerrarModalAusencia()">Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">FECHA DE LA AUSENCIA</div>
+      <input type="date" class="attend-select" id="ausencia-fecha" style="width:100%;margin-bottom:14px">
+      <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">MOTIVO (OPCIONAL)</div>
+      <textarea class="msg-input" style="width:100%" rows="3" id="ausencia-motivo" placeholder="Ej: motivos de salud..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" onclick="cerrarModalAusencia()">Cancelar</button>
+      <button type="button" class="btn btn-danger" id="btn-confirmar-ausencia" onclick="confirmarAusencia()">Confirmar ausencia</button>
+    </div>
+  </div>
+</div>
+
 <script>
   // Datos reales inyectados por el servidor (reemplazan los mocks
   // hardcodeados que tenía preceptor.js). Ver PreceptorController::portalData().
@@ -513,6 +601,7 @@ $turno = $portal['turnoResumen'];
       'msgs' => $portal['msgs'],
       'bloques' => $bloques,
       'horariosPorCurso' => $horariosPorCurso,
+      'contactos' => $portal['contactos'],
       'csrfToken' => csrf_token(),
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
   ?>;

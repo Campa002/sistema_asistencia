@@ -61,6 +61,24 @@ if ($page === 'preceptor/guardar_asistencia_ajax' && is_post()) {
     exit;
 }
 
+if ($page === 'preceptor/detalle_asistencia_ajax') {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::detalleAsistenciaAjax();
+    exit;
+}
+
+if ($page === 'preceptor/editar_asistencia_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::editarAsistenciaAjax();
+    exit;
+}
+
+if ($page === 'preceptor/indicar_ausencia_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::indicarAusenciaAjax();
+    exit;
+}
+
 if ($page === 'padre_tutor/enviar_mensaje_ajax' && is_post()) {
     require_once __DIR__ . '/../controllers/PadreTutorController.php';
     PadreTutorController::enviarMensajeAjax();

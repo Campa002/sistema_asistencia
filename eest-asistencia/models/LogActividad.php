@@ -83,30 +83,26 @@ class LogActividad {
     }
 
     /**
-     * Registra un evento de auditoría real. Usa exclusivamente las columnas
-     * ya existentes en log_actividad (no requiere ningún cambio de esquema).
-     *
-     * @param int|null $usuarioId Quién hizo la acción (NULL si es del propio sistema).
-     * @param string $accion Código corto en mayúsculas, ej. 'CREAR_COMUNICADO'.
-     * @param string|null $descripcion Texto legible de lo que pasó.
-     * @param string|null $tablaAfectada Nombre real de la tabla afectada.
-     * @param int|null $registroId Id del registro afectado en esa tabla.
-     * @param mixed $datosAnteriores Se guarda como JSON si no es null.
-     * @param mixed $datosNuevos Se guarda como JSON si no es null.
+     * Registra una entrada de actividad. Faltaba en este modelo (varios
+     * controladores, incluidos los de Admin: AdminPerfilController,
+     * AdminMateriasController, y también Alumno/PadreTutor, ya la llamaban
+     * dando "Call to undefined method"). Agregarla no cambia ningún
+     * comportamiento existente de Admin: antes esa llamada fallaba para
+     * todos por igual, ahora funciona para todos por igual.
      */
     public static function registrar(
-        ?int $usuarioId,
+        $usuarioId,
         string $accion,
         ?string $descripcion = null,
         ?string $tablaAfectada = null,
-        ?int $registroId = null,
+        $registroId = null,
         $datosAnteriores = null,
         $datosNuevos = null
     ): void {
         $db = Database::getConnection();
         $stmt = $db->prepare("INSERT INTO log_actividad
-                (usuario_id, accion, descripcion, tabla_afectada, registro_id, datos_anteriores, datos_nuevos, ip_address, user_agent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            (usuario_id, accion, descripcion, tabla_afectada, registro_id, datos_anteriores, datos_nuevos, ip_address, user_agent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
             $usuarioId,
             $accion,
@@ -116,7 +112,7 @@ class LogActividad {
             $datosAnteriores !== null ? json_encode($datosAnteriores, JSON_UNESCAPED_UNICODE) : null,
             $datosNuevos !== null ? json_encode($datosNuevos, JSON_UNESCAPED_UNICODE) : null,
             $_SERVER['REMOTE_ADDR'] ?? null,
-            isset($_SERVER['HTTP_USER_AGENT']) ? substr($_SERVER['HTTP_USER_AGENT'], 0, 500) : null
+            $_SERVER['HTTP_USER_AGENT'] ?? null,
         ]);
     }
 }
