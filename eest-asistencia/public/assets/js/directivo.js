@@ -4,17 +4,14 @@ var ctxGrafico = document
   .getElementById('grafico-asistencia')
   .getContext('2d');
 
-var datosManana = [92, 88, 95, 87, 91, 89];
-var datosTarde = [85, 90, 82, 93, 87, 84];
-
-var etiquetas = [
-  '1 1ra',
-  '1 2da',
-  '2 1ra',
-  '2 2da',
-  '3 1ra',
-  '3 2da'
-];
+// Presentes/ausentes reales por curso, inyectados por directivo.php en
+// window.SERVER_DATA (antes eran arrays de ejemplo hardcodeados).
+var SD = window.SERVER_DATA || { etiquetas: [], presentesManana: [], ausentesManana: [], presentesTarde: [], ausentesTarde: [] };
+var etiquetas = SD.etiquetas;
+var datosManana = SD.presentesManana;
+var datosTarde = SD.presentesTarde;
+var ausentesManana = SD.ausentesManana;
+var ausentesTarde = SD.ausentesTarde;
 
 var grafico = new Chart(ctxGrafico, {
   type: 'bar',
@@ -31,7 +28,7 @@ var grafico = new Chart(ctxGrafico, {
       },
       {
         label: 'Ausentes',
-        data: [8, 12, 5, 13, 9, 11],
+        data: ausentesManana,
         backgroundColor: '#c5dce8',
         borderRadius: 4
       }
@@ -73,9 +70,7 @@ var grafico = new Chart(ctxGrafico, {
           font: {
             size: 11
           }
-        },
-
-        max: 120
+        }
       }
     }
   }
@@ -94,13 +89,12 @@ function cambiarTurnoGrafico(turno, boton) {
     'selector-turno__opcion--activo'
   );
 
-  var nuevosDatos =
-    turno === 'manana'
-      ? datosManana
-      : datosTarde;
+  var esManana = turno === 'manana';
 
   grafico.data.datasets[0].data =
-    nuevosDatos;
+    esManana ? datosManana : datosTarde;
+  grafico.data.datasets[1].data =
+    esManana ? ausentesManana : ausentesTarde;
 
   grafico.update();
 }

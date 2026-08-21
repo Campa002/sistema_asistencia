@@ -218,6 +218,7 @@ $filters = $data['filters'];
                             </button>
                             <form method="POST" action="index.php" style="display: inline;">
                                 <input type="hidden" name="action" value="admin_toggle_estado_usuario">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="id" value="<?= e($usuario['id']) ?>">
                                 <label class="toggle-switch" style="display: inline-flex; cursor: pointer;">
                                     <input type="checkbox" onchange="this.form.submit()" <?= $usuario['estado'] === 'activo' ? 'checked' : '' ?>>
@@ -227,6 +228,7 @@ $filters = $data['filters'];
                             <?php if ($usuario['id'] != $_SESSION['usuario_id']): ?>
                                 <form method="POST" action="index.php" style="display: inline;" onsubmit="return confirm('¿Estás seguro de que deseas eliminar este usuario?');">
                                     <input type="hidden" name="action" value="admin_delete_usuario">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                                     <input type="hidden" name="id" value="<?= e($usuario['id']) ?>">
                                     <button type="submit" class="btn-icon" style="color: var(--danger);" title="Eliminar">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -259,6 +261,7 @@ $filters = $data['filters'];
             </div>
             <form method="POST" action="index.php">
                 <input type="hidden" name="action" value="admin_create_usuario">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Nombre</label>
@@ -338,6 +341,7 @@ $filters = $data['filters'];
             </div>
             <form id="editForm" method="POST" action="index.php">
                 <input type="hidden" name="action" value="admin_update_usuario">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="id" id="edit_id">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                     <div>

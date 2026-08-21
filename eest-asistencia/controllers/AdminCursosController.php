@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../models/Curso.php';
+require_once __DIR__ . '/../models/LogActividad.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
@@ -46,9 +47,14 @@ class AdminCursosController {
 
     public static function create() {
         require_role('admin');
-        
+
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
+        }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/cursos');
+            return;
         }
 
         $data = [
@@ -76,7 +82,16 @@ class AdminCursosController {
         }
 
         try {
-            Curso::create($data);
+            $nuevoId = Curso::create($data);
+            LogActividad::registrar(
+                $_SESSION['usuario_id'],
+                'CREAR_CURSO',
+                "Creó el curso {$data['anio']}° \"{$data['division']}\" (turno {$data['turno']})",
+                'cursos',
+                (int) $nuevoId,
+                null,
+                $data
+            );
             flash('success', 'Curso creado exitosamente');
         } catch (PDOException $e) {
             flash('errors', ['Error al crear el curso']);
@@ -91,10 +106,22 @@ class AdminCursosController {
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
         }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/cursos');
+            return;
+        }
 
         $id = input('id', 0);
         if (!$id) {
             flash('errors', ['ID de curso inválido']);
+            redirect('index.php?page=admin/cursos');
+            return;
+        }
+
+        $anterior = Curso::getById($id);
+        if (!$anterior) {
+            flash('errors', ['Curso no encontrado']);
             redirect('index.php?page=admin/cursos');
             return;
         }
@@ -110,6 +137,17 @@ class AdminCursosController {
 
         try {
             Curso::update($id, $data);
+            if (!empty($data)) {
+                LogActividad::registrar(
+                    $_SESSION['usuario_id'],
+                    'ACTUALIZAR_CURSO',
+                    "Actualizó el curso {$anterior['anio']}° \"{$anterior['division']}\" (ID $id)",
+                    'cursos',
+                    (int) $id,
+                    array_intersect_key($anterior, $data),
+                    $data
+                );
+            }
             flash('success', 'Curso actualizado exitosamente');
         } catch (PDOException $e) {
             flash('errors', ['Error al actualizar el curso']);
@@ -123,6 +161,11 @@ class AdminCursosController {
 
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
+        }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/cursos');
+            return;
         }
 
         $id = input('id', 0);
@@ -145,13 +188,22 @@ class AdminCursosController {
             $nuevoEstado = 'activo';
         }
         Curso::update($id, ['estado' => $nuevoEstado]);
-        
+        LogActividad::registrar(
+            $_SESSION['usuario_id'],
+            $nuevoEstado === 'activo' ? 'ACTIVAR_CURSO' : 'DESACTIVAR_CURSO',
+            "Curso {$curso['anio']}° \"{$curso['division']}\" (ID $id) pasó a estado $nuevoEstado",
+            'cursos',
+            (int) $id,
+            ['estado' => $curso['estado']],
+            ['estado' => $nuevoEstado]
+        );
+
         if ($nuevoEstado === 'activo') {
             flash('success', 'Curso activado exitosamente');
         } else {
             flash('success', 'Curso desactivado exitosamente');
         }
-        
+
         redirect('index.php?page=admin/cursos');
     }
 }

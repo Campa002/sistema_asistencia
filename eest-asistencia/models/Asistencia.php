@@ -1,12 +1,18 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/Curso.php';
+require_once __DIR__ . '/NotificacionFaltas.php';
 
 class Asistencia {
+    // Horarios institucionales de cada bloque, tal como figuran en los
+    // Excel oficiales (Horarios ciclo básico / ciclo superior). Uso
+    // exclusivo de presentación (getBloqueHorarioInfo/getHorarioMostrable):
+    // no interviene en calcularResumenDiario/calcularFaltaTurno ni en
+    // ninguna otra función de cálculo de faltas.
     private static $bloques_horarios = [
         'mañana' => [
             'primera_hora' => ['inicio' => '07:35', 'fin' => '09:35', 'display' => '1ra Hora'],
-            'segunda_hora' => ['inicio' => '09:45', 'fin' => '11:55', 'display' => '2da Hora'],
+            'segunda_hora' => ['inicio' => '09:55', 'fin' => '11:55', 'display' => '2da Hora'],
         ],
         'tarde' => [
             'primera_hora' => ['inicio' => '12:55', 'fin' => '14:55', 'display' => '1ra Hora'],
@@ -14,7 +20,7 @@ class Asistencia {
         ],
         'vespertino' => [
             'primera_hora' => ['inicio' => '17:35', 'fin' => '19:35', 'display' => '1ra Hora'],
-            'segunda_hora' => ['inicio' => '19:55', 'fin' => '21:45', 'display' => '2da Hora'],
+            'segunda_hora' => ['inicio' => '19:45', 'fin' => '21:45', 'display' => '2da Hora'],
         ],
     ];
 
@@ -203,6 +209,60 @@ class Asistencia {
         return null;
     }
 
+    /**
+     * A qué bloque institucional ('primera_hora'/'segunda_hora') del turno
+     * pertenece una hora de inicio real de asignaciones_materias. Solo
+     * clasificación por horario de INICIO (igual criterio que ya usa
+     * getHorarioMostrable para decidir "materia extendida" comparando contra
+     * el fin oficial del bloque): una materia que arranca dentro de la
+     * primera mitad del turno se registra como 'primera_hora' aunque después
+     * se extienda más allá del recreo hacia la segunda.
+     */
+    public static function inferirBloqueHorario(string $turno, string $horaInicio): string {
+        $turno = self::normalizeTurno($turno);
+        $segunda = self::$bloques_horarios[$turno]['segunda_hora']['inicio'] ?? null;
+        if ($segunda !== null && substr($horaInicio, 0, 5) >= $segunda) {
+            return 'segunda_hora';
+        }
+        return 'primera_hora';
+    }
+
+    /**
+     * Horario a mostrar para un registro de asistencia puntual: el
+     * institucional del bloque (turno+bloque_horario) para una materia
+     * normal, o el horario real guardado en el registro cuando se trata de
+     * una materia extendida (ocupa más de un bloque, ej. 17:35–20:45).
+     *
+     * No reemplaza ciegamente hora_inicio/hora_fin: los compara contra el
+     * horario oficial de SU PROPIO bloque. Si hora_fin real no supera el fin
+     * oficial de ese bloque, es una materia "normal" y se muestra el
+     * horario institucional (corrige datos genéricos/semilla que no
+     * reflejan el turno real, ej. tarde mostrando horarios de mañana). Si
+     * hora_fin real supera el fin oficial del bloque, se conserva el
+     * horario real del registro sin recortarlo.
+     */
+    public static function getHorarioMostrable($turno, $bloque, ?string $horaInicioReg, ?string $horaFinReg): string {
+        $oficial = self::getBloqueHorarioInfo($turno, $bloque);
+
+        if (!$oficial) {
+            $texto = trim(($horaInicioReg ?? '') . ' - ' . ($horaFinReg ?? ''), " -");
+            return $texto !== '' ? $texto : '-';
+        }
+
+        if ($horaInicioReg === null || $horaFinReg === null || $horaInicioReg === '' || $horaFinReg === '') {
+            return $oficial['inicio'] . ' - ' . $oficial['fin'];
+        }
+
+        $finRegistro = substr($horaFinReg, 0, 5);
+        if ($finRegistro > $oficial['fin']) {
+            // Materia extendida: se respeta el horario real guardado.
+            return substr($horaInicioReg, 0, 5) . ' - ' . $finRegistro;
+        }
+
+        // Materia normal dentro de su propio bloque: horario institucional.
+        return $oficial['inicio'] . ' - ' . $oficial['fin'];
+    }
+
     public static function getEditDataByRegistroId(int $registroId): ?array {
         $registro = self::getById($registroId);
         if (!$registro) {
@@ -353,6 +413,19 @@ class Asistencia {
             }
 
             $db->commit();
+
+            // Alerta de límite de faltas: "best effort", después del commit,
+            // para no afectar la edición de asistencia ya guardada si falla.
+            if (isset($data['alumnos']) && is_array($data['alumnos'])) {
+                foreach (array_keys($data['alumnos']) as $alumnoIdAfectado) {
+                    try {
+                        NotificacionFaltas::verificarYNotificar((int) $alumnoIdAfectado, (int) $adminId);
+                    } catch (Exception $e) {
+                        // No interrumpe el flujo: la edición ya quedó guardada.
+                    }
+                }
+            }
+
             return true;
         } catch (Exception $e) {
             $db->rollBack();
@@ -378,11 +451,113 @@ class Asistencia {
             self::calcularResumenDiario($registro['curso_id'], $registro['fecha']);
 
             $db->commit();
+
+            foreach (self::getDetallesByRegistroId($registroId) as $detalle) {
+                try {
+                    NotificacionFaltas::verificarYNotificar((int) $detalle['alumno_id'], (int) $adminId);
+                } catch (Exception $e) {
+                    // No interrumpe el flujo: la anulación ya quedó guardada.
+                }
+            }
+
             return true;
         } catch (Exception $e) {
             $db->rollBack();
             return false;
         }
+    }
+
+    /**
+     * Crea (o, si ya existe una toma abierta para el mismo contexto, actualiza
+     * de forma controlada vía updateRegistro) una toma real de asistencia
+     * tomada por un preceptor desde su portal. Reutiliza updateRegistro(),
+     * calcularResumenDiario() y registrarAuditoria() — no duplica ninguna
+     * lógica de cálculo de faltas ni de resumen.
+     *
+     * $estadosPorAlumno: [alumno_id => 'p'|'a'|'t'|'ra'] ya validado por el
+     * controller (alumnos reales del curso, todos presentes en el array).
+     *
+     * @return array{ok:bool, accion?:string, registroId?:int, error?:string}
+     */
+    public static function registrarTomaPreceptor(
+        int $cursoId,
+        int $materiaId,
+        int $preceptorId,
+        string $fecha,
+        string $turno,
+        string $horaInicio,
+        string $horaFin,
+        int $cicloLectivo,
+        array $estadosPorAlumno
+    ): array {
+        $mapaEstados = ['p' => 'presente', 'a' => 'ausente', 't' => 'llegada_tarde', 'ra' => 'retirado_anticipado'];
+        $bloqueHorario = self::inferirBloqueHorario($turno, $horaInicio);
+        $moduloHorario = $bloqueHorario === 'primera_hora' ? '1ra Hora' : '2da Hora';
+
+        $db = Database::getConnection();
+
+        // ¿Ya existe una toma para este contexto exacto? (mismo índice único
+        // que ya protege la tabla: curso_id + materia_id + fecha + modulo_horario)
+        $stmt = $db->prepare("SELECT id FROM registros_asistencia WHERE curso_id = ? AND materia_id = ? AND fecha = ? AND modulo_horario = ? LIMIT 1");
+        $stmt->execute([$cursoId, $materiaId, $fecha, $moduloHorario]);
+        $existenteId = $stmt->fetchColumn();
+
+        if ($existenteId) {
+            $registroExistente = self::getByIdRaw((int) $existenteId);
+            if (!$registroExistente || self::resolveEstadoRegistro($registroExistente) !== 'abierta') {
+                return ['ok' => false, 'error' => 'Ya existe una toma de asistencia finalizada para este curso, materia, fecha y módulo. No se puede volver a cargar; pedile a Administración que la edite si hace falta corregirla.'];
+            }
+
+            $alumnosParaUpdate = [];
+            foreach ($estadosPorAlumno as $alumnoId => $codigo) {
+                $alumnosParaUpdate[(int) $alumnoId] = $mapaEstados[$codigo] ?? 'ausente';
+            }
+            $ok = self::updateRegistro((int) $existenteId, ['alumnos' => $alumnosParaUpdate], $preceptorId, 'Actualización de toma de asistencia desde el portal de Preceptor.');
+            if (!$ok) {
+                return ['ok' => false, 'error' => 'No se pudo actualizar la toma existente.'];
+            }
+            return ['ok' => true, 'accion' => 'actualizado', 'registroId' => (int) $existenteId];
+        }
+
+        $db->beginTransaction();
+        try {
+            $stmt = $db->prepare("INSERT INTO registros_asistencia
+                (curso_id, materia_id, preceptor_id, fecha, modulo_horario, bloque_horario, hora_inicio, hora_fin, turno, estado, ciclo_lectivo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'abierta', ?)");
+            $stmt->execute([$cursoId, $materiaId, $preceptorId, $fecha, $moduloHorario, $bloqueHorario, $horaInicio, $horaFin, self::normalizeTurno($turno), $cicloLectivo]);
+            $registroId = (int) $db->lastInsertId();
+
+            $stmtDet = $db->prepare("INSERT INTO detalles_asistencia (registro_id, alumno_id, estado) VALUES (?, ?, ?)");
+            foreach ($estadosPorAlumno as $alumnoId => $codigo) {
+                $estado = $mapaEstados[$codigo] ?? 'ausente';
+                $stmtDet->execute([$registroId, (int) $alumnoId, $estado]);
+            }
+
+            self::registrarAuditoria($registroId, null, $preceptorId, 'crear', 'estado', null, 'abierta', 'Toma de asistencia creada desde el portal de Preceptor.');
+
+            self::calcularResumenDiario($cursoId, $fecha);
+
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollBack();
+            // Condición de carrera (doble clic / dos pestañas): otra petición
+            // ganó la inserción entre el SELECT y el INSERT — el índice único
+            // de la tabla es la última línea de defensa contra el duplicado.
+            if (str_contains($e->getMessage(), 'uq_curso_materia_fecha_modulo')) {
+                return ['ok' => false, 'error' => 'Ya se registró una toma para este mismo curso, materia, fecha y módulo justo ahora. Recargá la pantalla antes de reintentar.'];
+            }
+            return ['ok' => false, 'error' => 'No se pudo guardar la toma de asistencia.'];
+        }
+
+        foreach (array_keys($estadosPorAlumno) as $alumnoIdAfectado) {
+            try {
+                NotificacionFaltas::verificarYNotificar((int) $alumnoIdAfectado, (int) $preceptorId);
+            } catch (Exception $e) {
+                // No interrumpe el flujo: la toma ya quedó guardada.
+            }
+        }
+
+        return ['ok' => true, 'accion' => 'creado', 'registroId' => $registroId];
     }
 
     private static function registrarAuditoria($registroId, $alumnoId, $usuarioId, $accion, $campoModificado, $valorAnterior, $valorNuevo, $observaciones = '') {
@@ -400,67 +575,148 @@ class Asistencia {
             return false;
         }
 
-        $stmt = $db->prepare("SELECT id, curso_id, fecha, bloque_horario, turno FROM registros_asistencia 
+        $stmt = $db->prepare("SELECT id, curso_id, fecha, bloque_horario, turno FROM registros_asistencia
                               WHERE curso_id = ? AND fecha = ? AND estado != 'anulada'");
         $stmt->execute([$cursoId, $fecha]);
         $registros = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $turnos = [];
-        foreach ($registros as $registro) {
-            $turnos[] = self::normalizeTurno($registro['turno'] ?? null);
-        }
-        if (empty($turnos)) {
-            $turnos[] = self::normalizeTurno($curso['turno'] ?? null);
-        }
-        $turnos = array_values(array_unique($turnos));
+        // Fuente de verdad de los turnos del curso: curso_turnos (config real),
+        // NO lo que casualmente tenga registrado ese día puntual. Un curso de
+        // doble turno sigue siendo de doble turno aunque, un día particular,
+        // solo se haya tomado asistencia en uno de los dos (el otro turno
+        // simplemente no aporta detalle ese día, no cambia su condición).
+        $turnos = self::getTurnosOficialesCurso($cursoId, $curso);
+        $esDobleTurno = count($turnos) > 1;
+        // Doble turno: cada turno vale como máximo 0.5 (dos turnos ausentes
+        // suman 1.0 el día). Turno único: cada turno (el único que hay) vale
+        // como máximo 1.0. Nunca depende de cuántas materias/bloques haya.
+        $topePorTurno = $esDobleTurno ? 0.5 : 1.0;
 
         $alumnos = Curso::getAlumnosByCursoId($cursoId, (int) $curso['ciclo_lectivo']);
 
         foreach ($alumnos as $alumno) {
             foreach ($turnos as $turno) {
-                $faltas = 0;
-                $tieneJustificacion = false;
-                $detalleCalculo = [];
+                $registrosTurno = array_values(array_filter(
+                    $registros,
+                    fn($reg) => self::normalizeTurno($reg['turno'] ?? null) === $turno
+                ));
 
-                foreach ($registros as $reg) {
-                    if (self::normalizeTurno($reg['turno'] ?? null) !== $turno) {
-                        continue;
-                    }
+                [$faltas, $tieneJustificacion, $detalleCalculo] = self::calcularFaltaTurno(
+                    $registrosTurno,
+                    $alumno['id'],
+                    $topePorTurno
+                );
 
-                    $detalle = self::getDetalleAlumno($reg['id'], $alumno['id']);
-                    if (!$detalle) {
-                        continue;
-                    }
-
-                    $estado = self::normalizeDetalleEstado($detalle['estado'] ?? null);
-                    $detalleCalculo[] = "Bloque {$reg['bloque_horario']}: $estado";
-
-                    switch ($estado) {
-                        case 'ausente':
-                        case 'justificado':
-                            $faltas += 1;
-                            if ($estado === 'justificado') {
-                                $tieneJustificacion = true;
-                            }
-                            break;
-                        case 'ausente_con_presente':
-                            $faltas += 1;
-                            break;
-                        case 'llegada_tarde':
-                            $faltas += 0.25;
-                            break;
-                        case 'retirado_anticipado':
-                            $faltas += 0.5;
-                            break;
-                    }
-                }
-
-                $faltas = min($faltas, 1);
-                self::guardarResumenDiario($alumno['id'], $cursoId, $fecha, $turno, $faltas, $tieneJustificacion, implode(' | ', $detalleCalculo));
+                self::guardarResumenDiario($alumno['id'], $cursoId, $fecha, $turno, $faltas, $tieneJustificacion, $detalleCalculo);
             }
         }
 
         return true;
+    }
+
+    /**
+     * Turnos oficiales de un curso según curso_turnos (uno o dos turnos).
+     * Si el curso no tuviera fila en curso_turnos (no debería pasar con los
+     * datos actuales), cae de forma defensiva al turno único de cursos.turno.
+     */
+    private static function getTurnosOficialesCurso($cursoId, array $curso): array {
+        $db = Database::getConnection();
+        $stmt = $db->prepare("SELECT turno FROM curso_turnos WHERE curso_id = ? ORDER BY es_turno_principal DESC, id ASC");
+        $stmt->execute([$cursoId]);
+        $turnos = array_map(fn($t) => self::normalizeTurno($t), $stmt->fetchAll(PDO::FETCH_COLUMN));
+        $turnos = array_values(array_unique($turnos));
+
+        if (empty($turnos)) {
+            $turnos = [self::normalizeTurno($curso['turno'] ?? null)];
+        }
+
+        return $turnos;
+    }
+
+    /**
+     * Calcula la falta correspondiente a UN turno (no una hora de reloj: es
+     * el bloque "primera_hora"/"segunda_hora" del turno, cada uno pudiendo
+     * corresponder a una materia distinta o a una misma materia larga que
+     * ocupe ambos — el peso se calcula por turno, nunca se multiplica por
+     * cantidad de materias/bloques registrados).
+     *
+     * $tope es 1.0 para curso de un solo turno, 0.5 para cada turno de un
+     * curso de doble turno (ver calcularResumenDiario).
+     *
+     * @return array{0: float, 1: bool, 2: string} [falta, tieneJustificacion, detalleCalculo]
+     */
+    private static function calcularFaltaTurno(array $registrosTurno, $alumnoId, float $tope): array {
+        $sumaBruta = 0;
+        $tieneJustificacion = false;
+        $detalleCalculo = [];
+        $estadosPorBloque = [];
+
+        foreach ($registrosTurno as $reg) {
+            $detalle = self::getDetalleAlumno($reg['id'], $alumnoId);
+            if (!$detalle) {
+                continue;
+            }
+
+            $estado = self::normalizeDetalleEstado($detalle['estado'] ?? null);
+            $detalleCalculo[] = "Bloque {$reg['bloque_horario']}: $estado";
+            $estadosPorBloque[$reg['bloque_horario']][] = $estado;
+
+            switch ($estado) {
+                case 'ausente':
+                case 'justificado':
+                    $sumaBruta += 1;
+                    if ($estado === 'justificado') {
+                        $tieneJustificacion = true;
+                    }
+                    break;
+                case 'ausente_con_presente':
+                    $sumaBruta += 1;
+                    break;
+                case 'llegada_tarde':
+                    $sumaBruta += 0.25;
+                    break;
+                case 'retirado_anticipado':
+                    $sumaBruta += 0.5;
+                    break;
+            }
+        }
+
+        if (empty($detalleCalculo)) {
+            return [0.0, false, ''];
+        }
+
+        // Caso especial (reglas_del_sistema.md §8, "casos especiales dentro
+        // de un mismo turno"): si el primer bloque fue puramente "presente"
+        // y el segundo puramente "ausente", el turno vale 0.5 — no la suma
+        // genérica (que daría 1.0) — porque se interpreta como pérdida de la
+        // segunda mitad del turno, mismo peso que un retiro anticipado. El
+        // caso inverso (1ra ausente, 2da presente) ya coincide con la suma
+        // genérica (1.0) y no necesita excepción.
+        $primeraPura = self::estadoPuroDeBloque($estadosPorBloque['primera_hora'] ?? null);
+        $segundaPura = self::estadoPuroDeBloque($estadosPorBloque['segunda_hora'] ?? null);
+
+        if ($primeraPura === 'presente' && $segundaPura === 'ausente') {
+            $faltas = min(0.5, $tope);
+        } else {
+            $faltas = min($sumaBruta, $tope);
+        }
+
+        return [$faltas, $tieneJustificacion, implode(' | ', $detalleCalculo)];
+    }
+
+    /**
+     * Devuelve el estado si TODOS los registros de ese bloque (normalmente
+     * uno, salvo alguna anomalía de datos con más de una materia en el mismo
+     * bloque) comparten el mismo estado; null si no hay datos o están
+     * mezclados (en cuyo caso no se aplica el caso especial, se usa la suma
+     * genérica como respaldo seguro).
+     */
+    private static function estadoPuroDeBloque(?array $estados): ?string {
+        if (empty($estados)) {
+            return null;
+        }
+        $unicos = array_unique($estados);
+        return count($unicos) === 1 ? $unicos[0] : null;
     }
 
     private static function getDetalleAlumno($registroId, $alumnoId) {

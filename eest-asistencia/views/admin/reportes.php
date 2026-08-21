@@ -27,6 +27,7 @@ $preceptores = $data['preceptores'];
 $anios_disponibles = $data['anios_disponibles'] ?? [];
 $alumnos_disponibles = $data['alumnos_disponibles'] ?? [];
 $pagination = $data['pagination'] ?? [];
+$pdf_disponible = $data['pdf_disponible'] ?? false;
 
 $estado_nombres = [
     'presente' => 'Presente',
@@ -117,6 +118,7 @@ foreach ($presentismo_por_division as $item) {
                             <div id="exportMenu" class="export-dropdown" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 8px; background: white; border: 1px solid #E9ECEF; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); z-index: 100; min-width: 200px;">
                                 <form method="POST" action="index.php?page=admin/reportes" style="display: block;">
                                     <input type="hidden" name="action" value="exportar_csv">
+                                    <input type="hidden" name="csrf_token" value="<?php echo e(csrf_token()); ?>">
                                     <input type="hidden" name="generar" value="1">
                                     <input type="hidden" name="modo_reporte" value="<?php echo e($modo_reporte); ?>">
                                     <input type="hidden" name="ordenamiento" value="<?php echo e($ordenamiento); ?>">
@@ -133,6 +135,28 @@ foreach ($presentismo_por_division as $item) {
                                         Exportar CSV
                                     </button>
                                 </form>
+                                <?php if ($pdf_disponible): ?>
+                                <form method="POST" action="index.php?page=admin/reportes" style="display: block;">
+                                    <input type="hidden" name="action" value="exportar_pdf">
+                                    <input type="hidden" name="csrf_token" value="<?php echo e(csrf_token()); ?>">
+                                    <input type="hidden" name="generar" value="1">
+                                    <input type="hidden" name="modo_reporte" value="<?php echo e($modo_reporte); ?>">
+                                    <input type="hidden" name="ordenamiento" value="<?php echo e($ordenamiento); ?>">
+                                    <input type="hidden" name="anio_grafico" value="<?php echo e($anio_grafico); ?>">
+                                    <?php foreach ($filters as $key => $value): ?>
+                                        <?php if ($value !== ''): ?>
+                                            <input type="hidden" name="<?php echo e($key); ?>" value="<?php echo e($value); ?>">
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                    <button type="submit" class="export-dropdown-item">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                            <polyline points="14,2 14,8 20,8"/>
+                                        </svg>
+                                        Exportar PDF
+                                    </button>
+                                </form>
+                                <?php endif; ?>
                                 <button onclick="window.print()" class="export-dropdown-item">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path d="M6 9V2h12v7"/>
@@ -168,12 +192,12 @@ foreach ($presentismo_por_division as $item) {
                             <div style="display: flex; align-items: center; gap: 12px;">
                                 <label style="color: #6C757D; font-weight: 700; font-size: 14px; text-transform: uppercase;">Periodo</label>
                                 <select name="periodo" class="filter-input" style="min-width: 180px;" onchange="toggleCustomDates(this.value)">
-                                    <option value="hoy" <?php echo !empty($_GET['periodo']) && $_GET['periodo'] === 'hoy' ? 'selected' : ''; ?>>Hoy</option>
-                                    <option value="semana" <?php echo !empty($_GET['periodo']) && $_GET['periodo'] === 'semana' ? 'selected' : ''; ?>>Esta Semana</option>
-                                    <option value="mes" <?php echo !empty($_GET['periodo']) && $_GET['periodo'] === 'mes' ? 'selected' : ''; ?>>Este Mes</option>
-                                    <option value="cuatrimestre" selected>Cuatrimestre</option>
-                                    <option value="ciclo" <?php echo !empty($_GET['periodo']) && $_GET['periodo'] === 'ciclo' ? 'selected' : ''; ?>>Ciclo Lectivo</option>
-                                    <option value="personalizado" <?php echo !empty($_GET['periodo']) && $_GET['periodo'] === 'personalizado' ? 'selected' : ''; ?>>Personalizado</option>
+                                    <option value="hoy" <?php echo $filters['periodo'] === 'hoy' ? 'selected' : ''; ?>>Hoy</option>
+                                    <option value="semana" <?php echo $filters['periodo'] === 'semana' ? 'selected' : ''; ?>>Esta Semana</option>
+                                    <option value="mes" <?php echo $filters['periodo'] === 'mes' ? 'selected' : ''; ?>>Este Mes</option>
+                                    <option value="cuatrimestre" <?php echo $filters['periodo'] === 'cuatrimestre' ? 'selected' : ''; ?>>Cuatrimestre</option>
+                                    <option value="ciclo" <?php echo $filters['periodo'] === 'ciclo' ? 'selected' : ''; ?>>Ciclo Lectivo</option>
+                                    <option value="personalizado" <?php echo $filters['periodo'] === 'personalizado' ? 'selected' : ''; ?>>Personalizado</option>
                                 </select>
                             </div>
                             <div style="display: flex; align-items: center; gap: 12px;">
@@ -215,12 +239,12 @@ foreach ($presentismo_por_division as $item) {
                                     Más filtros
                                 </button>
                                 <a href="index.php?page=admin/reportes" class="btn-outline">Limpiar</a>
-                                <button type="submit" class="btn btn-primary">
+                                <button type="submit" class="btn-generar-reporte">
                                     <?php echo $generar ? 'Actualizar Datos' : 'Generar Reporte'; ?>
                                 </button>
                             </div>
                         </div>
-                        <div id="customDates" class="table-toolbar" style="margin-top: 16px; display: <?php echo !empty($_GET['periodo']) && $_GET['periodo'] === 'personalizado' ? 'flex' : 'none'; ?>;">
+                        <div id="customDates" class="table-toolbar" style="margin-top: 16px; display: <?php echo $filters['periodo'] === 'personalizado' ? 'flex' : 'none'; ?>;">
                             <div style="display: flex; align-items: center; gap: 12px;">
                                 <label style="color: #6C757D; font-weight: 700; font-size: 14px; text-transform: uppercase;">Desde</label>
                                 <input type="date" name="fecha_desde" class="filter-input" style="min-width: 160px;" value="<?php echo e($filters['fecha_desde']); ?>">
@@ -273,6 +297,17 @@ foreach ($presentismo_por_division as $item) {
                                         <?php foreach ($preceptores as $pre): ?>
                                             <option value="<?php echo e($pre['id']); ?>" <?php echo $filters['preceptor_id'] == $pre['id'] ? 'selected' : ''; ?>>
                                                 <?php echo e($pre['apellido'] . ', ' . $pre['nombre']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <label style="color: #6C757D; font-weight: 700; font-size: 14px; text-transform: uppercase;">División</label>
+                                    <select name="division" class="filter-input" style="min-width: 140px;">
+                                        <option value="">Todas</option>
+                                        <?php foreach (array_unique(array_column($cursos, 'division')) as $div): ?>
+                                            <option value="<?php echo e($div); ?>" <?php echo $filters['division'] === $div ? 'selected' : ''; ?>>
+                                                <?php echo e($div); ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -460,6 +495,204 @@ foreach ($presentismo_por_division as $item) {
             </div>
 
             <!-- Report Table -->
+            <?php if ($generar): ?>
+            <div class="dashboard-card" id="resultados" style="margin-bottom: 24px; padding: 0; scroll-margin-top: 24px;">
+                <div class="table-header" style="padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <h3 style="margin: 0; color: #071D3A; font-size: 16px;">Resumen por Alumno</h3>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="color: #6C757D; font-size: 14px; font-weight: 700;">Por página:</span>
+                        <select class="filter-input" style="width: auto;" onchange="cambiarPerPage(this.value)">
+                            <?php foreach ([10, 25, 50, 'all'] as $pp): ?>
+                                <option value="<?php echo e($pp); ?>" <?php echo (string)($pagination['per_page'] ?? 10) === (string)$pp ? 'selected' : ''; ?>>
+                                    <?php echo $pp === 'all' ? 'Todos' : $pp; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+
+                <?php if (!empty($pagination['total'])): ?>
+                    <div class="table-meta-bar" style="padding: 14px 24px; color: #6C757D; font-size: 14px; font-weight: 600;">
+                        <?php if (($pagination['per_page'] ?? 10) === 'all'): ?>
+                            Mostrando todos los <?php echo e($pagination['total']); ?> registros
+                        <?php else:
+                            $start = ($pagination['page_num'] - 1) * $pagination['per_page'] + 1;
+                            $end = min($pagination['page_num'] * $pagination['per_page'], $pagination['total']);
+                        ?>
+                            Mostrando <?php echo e($start); ?>–<?php echo e($end); ?> de <?php echo e($pagination['total']); ?> registros
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+
+                <div class="data-table-scroll" style="overflow-x: auto;">
+                    <table class="data-table" style="width: 100%;">
+                        <thead>
+                            <tr style="background: #E8F4FC;">
+                                <th style="text-align: left; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Alumno</th>
+                                <th style="text-align: left; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Curso/División</th>
+                                <th style="text-align: left; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Especialidad</th>
+                                <th style="text-align: left; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Turno</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Presentes</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Ausentes</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Tarde</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Aus. c/Pres.</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Justif.</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Retiros</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Faltas</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">% Asist.</th>
+                                <th style="text-align: center; padding: 16px 24px; font-size: 13px; font-weight: 700; color: #6C757D; text-transform: uppercase; letter-spacing: 0.5px;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (empty($datos_reporte['alumnos'])): ?>
+                                <tr>
+                                    <td colspan="13" style="padding: 48px 24px; text-align: center; color: #6C757D;">
+                                        No hay resultados para los filtros seleccionados.
+                                    </td>
+                                </tr>
+                            <?php else: foreach ($datos_reporte['alumnos'] as $a): ?>
+                                <tr>
+                                    <td style="padding: 16px 24px; font-size: 14px; font-weight: 700; color: #071D3A;"><?php echo e($a['apellido'] . ', ' . $a['nombre']); ?></td>
+                                    <td style="padding: 16px 24px; font-size: 14px; color: #071D3A;"><?php echo e($a['anio'] . '° ' . $a['division']); ?></td>
+                                    <td style="padding: 16px 24px; font-size: 14px; color: #071D3A;"><?php echo e($a['especialidad_nombre'] ?? '-'); ?></td>
+                                    <td style="padding: 16px 24px; font-size: 14px; color: #071D3A;"><?php echo e(ucfirst($a['turno'] ?? '-')); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; color: #071D3A;"><?php echo e($a['presentes']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; color: #071D3A;"><?php echo e($a['ausentes']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; color: #071D3A;"><?php echo e($a['llegadas_tarde']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; color: #071D3A;"><?php echo e($a['ausentes_con_presente']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; color: #071D3A;"><?php echo e($a['justificados']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; color: #071D3A;"><?php echo e($a['retiros_anticipados']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center; font-size: 14px; font-weight: 700; color: #071D3A;"><?php echo e($a['faltas_total']); ?></td>
+                                    <td style="padding: 16px 24px; text-align: center;">
+                                        <span class="status-badge" style="<?php echo $a['porcentaje_asistencia'] < 70 ? 'background:#F8D7DA;color:#721C24;' : 'background:#D4EDDA;color:#155724;'; ?> padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 800;">
+                                            <?php echo e($a['porcentaje_asistencia']); ?>%
+                                        </span>
+                                    </td>
+                                    <td style="padding: 16px 24px; text-align: center;">
+                                        <div style="display: flex; justify-content: center; gap: 4px;">
+                                            <button type="button" class="btn-icon" title="Ver resumen" onclick="abrirModalResumen(<?php echo (int) $a['alumno_id']; ?>)">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                                    <circle cx="12" cy="12" r="3"/>
+                                                </svg>
+                                            </button>
+                                            <button type="button" class="btn-icon btn-icon-primary" title="Ver asistencia detallada" onclick="abrirModalDetalle(<?php echo (int) $a['alumno_id']; ?>, '<?php echo e(addslashes($a['apellido'] . ', ' . $a['nombre'])); ?>')">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                                    <line x1="16" y1="2" x2="16" y2="6"/>
+                                                    <line x1="8" y1="2" x2="8" y2="6"/>
+                                                    <line x1="3" y1="10" x2="21" y2="10"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <?php if (!empty($pagination['total_pages']) && $pagination['total_pages'] > 1): ?>
+                    <div class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-top: 1px solid #E9ECEF; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <?php if ($pagination['page_num'] > 1): ?>
+                                <button type="button" onclick="cambiarPagina(<?php echo e($pagination['page_num'] - 1); ?>)" class="pagination-btn" style="width: auto; min-width: 40px; height: auto; padding: 8px 16px; white-space: nowrap; border: 1px solid #DEE2E6; border-radius: 8px; color: #071D3A; cursor: pointer; background: white;">Anterior</button>
+                            <?php endif; ?>
+                        </div>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
+                                <?php if ($i == $pagination['page_num']): ?>
+                                    <span class="pagination-btn active" style="width: auto; min-width: 40px; height: auto; padding: 8px 16px; white-space: nowrap; border: 1px solid #071D3A; border-radius: 8px; background: #071D3A; color: white;"><?php echo e($i); ?></span>
+                                <?php else: ?>
+                                    <button type="button" onclick="cambiarPagina(<?php echo e($i); ?>)" class="pagination-btn" style="width: auto; min-width: 40px; height: auto; padding: 8px 16px; white-space: nowrap; border: 1px solid #DEE2E6; border-radius: 8px; color: #071D3A; cursor: pointer; background: white;"><?php echo e($i); ?></button>
+                                <?php endif; ?>
+                            <?php endfor; ?>
+                        </div>
+                        <div>
+                            <?php if ($pagination['page_num'] < $pagination['total_pages']): ?>
+                                <button type="button" onclick="cambiarPagina(<?php echo e($pagination['page_num'] + 1); ?>)" class="pagination-btn" style="width: auto; min-width: 40px; height: auto; padding: 8px 16px; white-space: nowrap; border: 1px solid #DEE2E6; border-radius: 8px; color: #071D3A; cursor: pointer; background: white;">Siguiente</button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Modal: Ver resumen del alumno -->
+        <div id="modalResumen" class="modal-overlay" onclick="if (event.target === this) cerrarModalResumen();">
+            <div class="modal-box" style="max-width: 480px;">
+                <div class="modal-box-header">
+                    <h2 id="modalResumenTitulo">Resumen del alumno</h2>
+                    <button type="button" class="modal-close-btn" onclick="cerrarModalResumen()" aria-label="Cerrar">&times;</button>
+                </div>
+                <div class="modal-box-body">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                        <div style="background: #F8F9FA; padding: 14px; border-radius: 8px;">
+                            <strong style="color: #6C757D; font-size: 11px; text-transform: uppercase;">Curso</strong>
+                            <div id="modalResumenCurso" style="font-size: 15px; font-weight: 700; color: #071D3A; margin-top: 4px;">-</div>
+                        </div>
+                        <div style="background: #F8F9FA; padding: 14px; border-radius: 8px;">
+                            <strong style="color: #6C757D; font-size: 11px; text-transform: uppercase;">Especialidad</strong>
+                            <div id="modalResumenEspecialidad" style="font-size: 15px; font-weight: 700; color: #071D3A; margin-top: 4px;">-</div>
+                        </div>
+                        <div style="background: #F8F9FA; padding: 14px; border-radius: 8px;">
+                            <strong style="color: #6C757D; font-size: 11px; text-transform: uppercase;">Turno</strong>
+                            <div id="modalResumenTurno" style="font-size: 15px; font-weight: 700; color: #071D3A; margin-top: 4px;">-</div>
+                        </div>
+                        <div style="background: #E8F4FC; padding: 14px; border-radius: 8px;">
+                            <strong style="color: #006397; font-size: 11px; text-transform: uppercase;">% Asistencia</strong>
+                            <div id="modalResumenPorcentaje" style="font-size: 15px; font-weight: 700; color: #071D3A; margin-top: 4px;">-</div>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                        <div style="text-align: center; padding: 12px 4px; border: 1px solid #E9ECEF; border-radius: 8px;">
+                            <div id="modalResumenPresentes" style="font-size: 20px; font-weight: 800; color: #28A745;">-</div>
+                            <div style="font-size: 11px; color: #6C757D; text-transform: uppercase; margin-top: 2px;">Presentes</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px 4px; border: 1px solid #E9ECEF; border-radius: 8px;">
+                            <div id="modalResumenAusentes" style="font-size: 20px; font-weight: 800; color: #DC3545;">-</div>
+                            <div style="font-size: 11px; color: #6C757D; text-transform: uppercase; margin-top: 2px;">Ausentes</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px 4px; border: 1px solid #E9ECEF; border-radius: 8px;">
+                            <div id="modalResumenTarde" style="font-size: 20px; font-weight: 800; color: #FD7E14;">-</div>
+                            <div style="font-size: 11px; color: #6C757D; text-transform: uppercase; margin-top: 2px;">Tarde</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px 4px; border: 1px solid #E9ECEF; border-radius: 8px;">
+                            <div id="modalResumenAusConPres" style="font-size: 20px; font-weight: 800; color: #DC3545;">-</div>
+                            <div style="font-size: 11px; color: #6C757D; text-transform: uppercase; margin-top: 2px;">Aus. c/Pres.</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px 4px; border: 1px solid #E9ECEF; border-radius: 8px;">
+                            <div id="modalResumenJustificados" style="font-size: 20px; font-weight: 800; color: #006397;">-</div>
+                            <div style="font-size: 11px; color: #6C757D; text-transform: uppercase; margin-top: 2px;">Justificados</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px 4px; border: 1px solid #E9ECEF; border-radius: 8px;">
+                            <div id="modalResumenRetiros" style="font-size: 20px; font-weight: 800; color: #FD7E14;">-</div>
+                            <div style="font-size: 11px; color: #6C757D; text-transform: uppercase; margin-top: 2px;">Retiros</div>
+                        </div>
+                    </div>
+                    <div style="text-align: center; margin-top: 16px; padding: 14px; background: #071D3A; border-radius: 8px;">
+                        <div id="modalResumenFaltas" style="font-size: 24px; font-weight: 800; color: #FFFFFF;">-</div>
+                        <div style="font-size: 11px; color: rgba(255,255,255,0.8); text-transform: uppercase; margin-top: 2px;">Total de Faltas</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Ver asistencia detallada del alumno -->
+        <div id="modalDetalle" class="modal-overlay" onclick="if (event.target === this) cerrarModalDetalle();">
+            <div class="modal-box" style="max-width: 1100px;">
+                <div class="modal-box-header">
+                    <h2 id="modalDetalleTitulo">Asistencia detallada</h2>
+                    <button type="button" class="modal-close-btn" onclick="cerrarModalDetalle()" aria-label="Cerrar">&times;</button>
+                </div>
+                <div class="modal-box-body">
+                    <p style="font-size: 13px; color: #6C757D; margin: 0 0 16px 0;">Se muestran los registros del alumno seleccionado dentro de los mismos filtros aplicados en el reporte (período, curso, turno, etc.).</p>
+                    <div id="modalDetalleContenido" style="max-height: 55vh; overflow-y: auto; overflow-x: auto;">
+                        <p style="text-align: center; color: #6C757D; padding: 24px;">Cargando...</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 </div>
@@ -468,7 +701,7 @@ foreach ($presentismo_por_division as $item) {
     @media print {
         .sidebar,
         .dashboard-header,
-        .pagination-controls,
+        .pagination-bar,
         .toggle-group,
         .btn-outline,
         .btn-primary,
@@ -562,16 +795,123 @@ foreach ($presentismo_por_division as $item) {
     .export-dropdown-item:last-child {
         border-radius: 0 0 8px 8px;
     }
+
+    .toggle-group .btn-outline.active {
+        background: #071D3A;
+        color: #FFFFFF;
+        border-color: #071D3A;
+    }
+
+    /* Botón "Generar Reporte" / "Actualizar Datos" con el mismo tamaño que
+       "Más filtros" y "Limpiar" (.btn-outline): mismo padding, borde, radio
+       y tipografía, solo cambia el color de fondo. */
+    .btn-generar-reporte {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: #071D3A;
+        color: #FFFFFF;
+        border: 2px solid #071D3A;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--transition, background-color 0.2s);
+    }
+    .btn-generar-reporte:hover {
+        background: #006397;
+        border-color: #006397;
+    }
+
+    /* Modales "Ver resumen" / "Ver asistencia detallada" */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    }
+    .modal-overlay.open {
+        display: flex;
+    }
+    .modal-box {
+        background: white;
+        border-radius: 12px;
+        width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .modal-box-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 24px;
+        border-bottom: 1px solid #E9ECEF;
+        flex-shrink: 0;
+    }
+    .modal-box-header h2 {
+        margin: 0;
+        color: #071D3A;
+        font-size: 18px;
+    }
+    .modal-close-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 24px;
+        line-height: 1;
+        color: #6C757D;
+        padding: 4px;
+    }
+    .modal-close-btn:hover {
+        color: #071D3A;
+    }
+    .modal-box-body {
+        padding: 24px;
+        overflow-y: auto;
+    }
+
+    @media (max-width: 768px) {
+        .modal-box {
+            width: 100%;
+            max-height: 100vh;
+            border-radius: 0;
+        }
+        .modal-overlay {
+            padding: 0;
+        }
+    }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    const chartData = <?php 
+    const chartData = <?php
         echo json_encode([
             'labels' => $chart_labels,
             'data' => $chart_data,
             'colors' => $chart_colors
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ?>;
+
+    // Datos ya cargados en la tabla de resumen (misma fuente que la BD ya
+    // consultó para renderizar la tabla), indexados por alumno_id, para que
+    // el modal "Ver resumen" no necesite una consulta nueva al servidor.
+    const resumenPorAlumno = <?php
+        $resumenMap = [];
+        foreach (($datos_reporte['alumnos'] ?? []) as $a) {
+            $resumenMap[$a['alumno_id']] = $a;
+        }
+        echo json_encode($resumenMap, JSON_UNESCAPED_UNICODE);
     ?>;
 
     <?php
@@ -606,24 +946,126 @@ foreach ($presentismo_por_division as $item) {
         moreFilters.style.display = moreFilters.style.display === 'block' ? 'none' : 'block';
     }
 
-    function cambiarModo(modo) {
+    // Navega manteniendo TODOS los parámetros actuales de la URL (filtros,
+    // modo, orden, período, etc.) y aterriza en la sección de resultados en
+    // vez de en el comienzo de la página. Sigue siendo navegación normal
+    // (GET, sin AJAX) — solo evita que el usuario "pierda" el scroll.
+    function irAResultados(cambios) {
         const params = new URLSearchParams(window.location.search);
-        params.set('modo_reporte', modo);
-        window.location.search = params.toString();
+        for (const clave in cambios) {
+            if (cambios[clave] === null) {
+                params.delete(clave);
+            } else {
+                params.set(clave, cambios[clave]);
+            }
+        }
+        window.location.href = window.location.pathname + '?' + params.toString() + '#resultados';
     }
 
     function cambiarPagina(pagina) {
-        const params = new URLSearchParams(window.location.search);
-        params.set('page_num', pagina);
-        window.location.search = params.toString();
+        irAResultados({ page_num: pagina });
     }
 
     function cambiarPerPage(perPage) {
-        const params = new URLSearchParams(window.location.search);
-        params.set('per_page', perPage);
-        params.delete('page_num');
-        window.location.search = params.toString();
+        irAResultados({ per_page: perPage, page_num: null });
     }
+
+    // ===== Modal "Ver resumen" =====
+    function abrirModalResumen(alumnoId) {
+        const a = resumenPorAlumno[alumnoId];
+        if (!a) return;
+
+        document.getElementById('modalResumenTitulo').textContent = a.apellido + ', ' + a.nombre;
+        document.getElementById('modalResumenCurso').textContent = a.anio + '° ' + a.division;
+        document.getElementById('modalResumenEspecialidad').textContent = a.especialidad_nombre || '-';
+        document.getElementById('modalResumenTurno').textContent = a.turno ? (a.turno.charAt(0).toUpperCase() + a.turno.slice(1)) : '-';
+        document.getElementById('modalResumenPorcentaje').textContent = a.porcentaje_asistencia + '%';
+        document.getElementById('modalResumenPresentes').textContent = a.presentes;
+        document.getElementById('modalResumenAusentes').textContent = a.ausentes;
+        document.getElementById('modalResumenTarde').textContent = a.llegadas_tarde;
+        document.getElementById('modalResumenAusConPres').textContent = a.ausentes_con_presente;
+        document.getElementById('modalResumenJustificados').textContent = a.justificados;
+        document.getElementById('modalResumenRetiros').textContent = a.retiros_anticipados;
+        document.getElementById('modalResumenFaltas').textContent = a.faltas_total;
+
+        document.getElementById('modalResumen').classList.add('open');
+    }
+
+    function cerrarModalResumen() {
+        document.getElementById('modalResumen').classList.remove('open');
+    }
+
+    // ===== Modal "Ver asistencia detallada" =====
+    function abrirModalDetalle(alumnoId, nombreCompleto) {
+        document.getElementById('modalDetalleTitulo').textContent = 'Asistencia detallada — ' + nombreCompleto;
+        const contenido = document.getElementById('modalDetalleContenido');
+        contenido.innerHTML = '<p style="text-align:center; color:#6C757D; padding:24px;">Cargando...</p>';
+        document.getElementById('modalDetalle').classList.add('open');
+
+        // Reutiliza EXACTAMENTE los filtros vigentes en la URL actual
+        // (período, curso, turno, materia, etc.) y agrega/fuerza el alumno.
+        const params = new URLSearchParams(window.location.search);
+        params.set('page', 'admin/reportes/detalle_alumno');
+        params.set('alumno_id', alumnoId);
+
+        fetch('index.php?' + params.toString(), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                contenido.innerHTML = '<p style="text-align:center; color:#DC3545; padding:24px;">' + data.error + '</p>';
+                return;
+            }
+            if (!data.registros || data.registros.length === 0) {
+                contenido.innerHTML = '<p style="text-align:center; color:#6C757D; padding:24px;">No hay asistencias registradas para este alumno con los filtros actuales.</p>';
+                return;
+            }
+
+            let html = '<table class="data-table" style="width:100%;"><thead><tr style="background:#E8F4FC;">';
+            ['Fecha', 'Curso/División', 'Especialidad', 'Turno', 'Materia', 'Bloque', 'Horario', 'Preceptor', 'Estado', 'Hora Llegada', 'Hora Retiro', 'Justificación', 'Falta Diaria', 'Observaciones'].forEach(col => {
+                html += '<th style="text-align:left; padding:10px 14px; font-size:12px; font-weight:700; color:#6C757D; text-transform:uppercase; white-space:nowrap;">' + col + '</th>';
+            });
+            html += '</tr></thead><tbody>';
+
+            data.registros.forEach(r => {
+                html += '<tr>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.fecha + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.curso + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.especialidad + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.turno + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.materia + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.bloque + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#6C757D; white-space:nowrap;">' + r.horario + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.preceptor + '</td>'
+                    + '<td style="padding:10px 14px; white-space:nowrap;"><span class="status-badge" style="background:#E8F4FC;color:#006397; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:800;">' + r.estado + '</span></td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.hora_llegada + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.hora_retiro + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; white-space:nowrap;">' + r.justificacion + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#071D3A; text-align:center; white-space:nowrap;">' + r.falta_diaria + '</td>'
+                    + '<td style="padding:10px 14px; font-size:13px; color:#6C757D;">' + r.observaciones + '</td>'
+                    + '</tr>';
+            });
+
+            html += '</tbody></table>';
+            contenido.innerHTML = html;
+        })
+        .catch(() => {
+            contenido.innerHTML = '<p style="text-align:center; color:#DC3545; padding:24px;">Ocurrió un error al cargar la asistencia detallada.</p>';
+        });
+    }
+
+    function cerrarModalDetalle() {
+        document.getElementById('modalDetalle').classList.remove('open');
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            cerrarModalResumen();
+            cerrarModalDetalle();
+        }
+    });
 
     function clearAlumnoSelection() {
         document.getElementById('alumno_search').value = '';
@@ -771,6 +1213,7 @@ foreach ($presentismo_por_division as $item) {
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: {
                             display: false
@@ -791,6 +1234,12 @@ foreach ($presentismo_por_division as $item) {
                                 callback: function(value) {
                                     return value + '%';
                                 }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                autoSkip: false,
+                                maxRotation: 0
                             }
                         }
                     }

@@ -61,7 +61,15 @@ $rolNombres = [
                 </a>
             </div>
         </header>
-        
+
+        <?php if (has_flash('errors')): ?>
+            <div class="alert alert-danger" style="padding: 16px; border-radius: 8px; background: #f8d7da; color: #721c24; margin: 16px 24px 0;">
+                <?php foreach (flash('errors') as $error): ?>
+                    <div><?= e($error) ?></div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
         <div class="chat-container">
             <!-- Columna 1: Lista de conversaciones -->
             <div class="chat-sidebar">
@@ -215,6 +223,7 @@ $rolNombres = [
                     <div class="chat-input-area">
                         <form method="POST" action="index.php?page=admin/mensajes&conversacion_id=<?= e($conversacionSeleccionada['id']) ?>" class="chat-input-form">
                             <input type="hidden" name="action" value="enviar_mensaje">
+                            <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                             <input type="hidden" name="conversacion_id" value="<?= e($conversacionSeleccionada['id']) ?>">
                             <div class="chat-input-wrapper">
                                 <input type="text" name="contenido" class="chat-input" placeholder="Escribe un mensaje..." required>
@@ -294,7 +303,8 @@ $rolNombres = [
             
             <form method="POST" action="index.php?page=admin/mensajes" class="new-conversation-form">
                 <input type="hidden" name="action" value="nueva_conversacion">
-                
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+
                 <div class="form-group">
                     <label for="destinatario">Seleccionar destinatario</label>
                     <select id="destinatario" name="destinatario_id" class="filter-input" required>

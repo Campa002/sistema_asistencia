@@ -2,56 +2,22 @@
 // ═══════════════════════════════════════
 //  DATA
 // ═══════════════════════════════════════
+// Provistos por el servidor (ver padre-tutor.php -> window.SERVER_DATA),
+// generados por PadreTutorController::portalData() a partir de la BD real
+// (vinculaciones, detalles_asistencia, mensajes).
+const SD = window.SERVER_DATA || { porMes: {}, anioInicial: new Date().getFullYear(), mesInicial: new Date().getMonth() + 1, msgs: [], csrfToken: '' };
+
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-let currentMonth = 5; // Junio
-let currentYear  = 2026;
+let currentMonth = SD.mesInicial;
+let currentYear  = SD.anioInicial;
 
-const DIAS_DATA = {
-  '2026-6': [
-    { dia:'LUN', num:10, tipo:'Jornada Completa', ingreso:'07:45 AM', estado:'presente' },
-    { dia:'MAR', num:11, tipo:'Jornada Completa', ingreso:'08:15 AM', estado:'tarde' },
-    { dia:'MIE', num:12, tipo:'Jornada Completa', ingreso:null,       estado:'ausente' },
-    { dia:'JUE', num:13, tipo:'Jornada Completa', ingreso:'07:50 AM', estado:'presente' },
-    { dia:'VIE', num:14, tipo:'Jornada Completa', ingreso:'07:38 AM', estado:'presente' },
-    { dia:'LUN', num:17, tipo:'Jornada Completa', ingreso:'07:40 AM', estado:'presente' },
-    { dia:'MAR', num:18, tipo:'Jornada Completa', ingreso:'08:30 AM', estado:'tarde' },
-    { dia:'MIE', num:19, tipo:'Jornada Completa', ingreso:'07:35 AM', estado:'presente' },
-  ],
-  '2026-5': [
-    { dia:'LUN', num:5,  tipo:'Jornada Completa', ingreso:'07:42 AM', estado:'presente' },
-    { dia:'MAR', num:6,  tipo:'Jornada Completa', ingreso:null,       estado:'ausente' },
-    { dia:'MIE', num:7,  tipo:'Jornada Completa', ingreso:'07:38 AM', estado:'presente' },
-    { dia:'JUE', num:8,  tipo:'Jornada Completa', ingreso:'07:45 AM', estado:'presente' },
-  ],
-};
-
-const msgsData = [
-  { id:1, from:'Preceptora Elena Ruiz', role:'Preceptora', time:'10:45 AM', unread:true,
-    preview:'Nueva citación para reunión de padres',
-    preview2:'Estimado tutor, le informo que...',
-    conversation:[
-      { dir:'in',  text:'Estimado tutor, le informo que se convoca a una reunión de padres el próximo 15 de octubre a las 18 hs en la sala de profesores.', time:'10:45 AM', hasFile:false },
-    ]
-  },
-  { id:2, from:'Preceptor Carlos Gómez', role:'Preceptor', time:'AYER', unread:false,
-    preview:'Justificación de inasistencia: Julian Ader',
-    preview2:'✓✓ Recibido. Gracias por el aviso.',
-    conversation:[
-      { dir:'out', text:'Buen día. Adjunto el certificado médico correspondiente a la inasistencia de mi hijo Juan Perez el día de ayer por fiebre.', time:'08:45', hasFile:false },
-      { dir:'out', text:null, time:'08:45', hasFile:true,
-        fileName:'Certificado_Medico_Perez.pdf', fileSize:'1.2 MB' },
-      { dir:'in',  text:'Recibido Martina. El equipo administrativo revisará el documento a la brevedad. Saludos.', time:'09:12', hasFile:false },
-    ]
-  },
-  { id:3, from:'Mateo Silvero (Hijo)', role:'Alumno', time:'LUNES', unread:false,
-    preview:'Anda al colegio vago',
-    preview2:'✓✓ Ahora voy me quede dormido',
-    conversation:[
-      { dir:'in',  text:'Anda al colegio vago', time:'07:20', hasFile:false },
-      { dir:'out', text:'Ahora voy me quede dormido', time:'07:22', hasFile:false },
-    ]
-  },
-];
+const DIAS_DATA = SD.porMes;
+const msgsData = SD.msgs.map(function (m) {
+  return {
+    id: m.id, from: m.from, role: m.role, time: m.time, unread: m.unread,
+    preview: m.preview, preview2: '', conversation: m.conversation
+  };
+});
 
 let activeConv = null;
 let filteredMsgs = [...msgsData];
@@ -185,7 +151,6 @@ function renderMsgList(){
       <div class="msg-info">
         <div class="msg-from">${m.from}</div>
         <div class="${m.unread?'msg-preview-bold':'msg-preview'}">${m.preview}</div>
-        <div class="msg-preview" style="font-style:italic">${m.preview2}</div>
       </div>
       <div class="msg-meta">
         <span class="${m.unread?'msg-time':'msg-time-gray'}">${m.time}</span>
@@ -277,10 +242,33 @@ function sendMsg(){
   const text = input.value.trim();
   if(!text) return;
   const conv = msgsData.find(m=>m.id===activeConv);
-  conv.conversation.push({ dir:'out', text, time:nowTime(), hasFile:false });
+
   input.value='';
   input.style.height='';
-  renderChat(conv);
+  input.disabled = true;
+
+  fetch('index.php?page=padre_tutor/enviar_mensaje_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ conversacion_id: activeConv, contenido: text, csrf_token: SD.csrfToken })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      input.disabled = false;
+      if (!data.ok) {
+        alert(data.error || 'No se pudo enviar el mensaje.');
+        input.value = text;
+        return;
+      }
+      conv.conversation.push({ dir:'out', text, time: data.hora || nowTime(), hasFile:false });
+      conv.preview = text;
+      renderChat(conv);
+    })
+    .catch(function () {
+      input.disabled = false;
+      alert('No se pudo enviar el mensaje. Verificá tu conexión.');
+      input.value = text;
+    });
 }
 
 function closeChatMobile(){

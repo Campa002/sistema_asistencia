@@ -430,6 +430,7 @@ $estados_alumnos = ['presente', 'ausente', 'llegada_tarde', 'ausente_con_present
         <div class="modal-content" style="background: white; border-radius: 12px; padding: 32px; max-width: 1000px; width: 90%; max-height: 90vh; overflow-y: auto;">
             <form method="POST" action="index.php?page=admin/asistencias">
                 <input type="hidden" name="action" value="editar_asistencia">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="registro_id" id="edit_registro_id">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
@@ -511,6 +512,7 @@ $estados_alumnos = ['presente', 'ausente', 'llegada_tarde', 'ausente_con_present
         <div class="modal-content" style="background: white; border-radius: 12px; padding: 32px; max-width: 500px; width: 90%;">
             <form method="POST" action="index.php?page=admin/asistencias">
                 <input type="hidden" name="action" value="anular_asistencia">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="registro_id" id="anular_registro_id">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">

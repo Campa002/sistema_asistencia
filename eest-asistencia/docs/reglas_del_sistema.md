@@ -229,10 +229,11 @@ Lista de alumnos.
 Estado de cada alumno.
 
 ### Bloques horarios oficiales:
+(Corregidos según los Excel institucionales "Horarios ciclo básico" y "horarios ciclo superior", agosto 2026)
 - **Turno mañana**:
   - 1ra hora: 07:35 a 09:35
-  - Recreo: 09:35 a 09:45
-  - 2da hora: 09:45 a 11:55
+  - Recreo: 09:35 a 09:55
+  - 2da hora: 09:55 a 11:55
 - **Almuerzo**: 11:55 a 12:55
 - **Turno tarde**:
   - 1ra hora: 12:55 a 14:55
@@ -240,8 +241,8 @@ Estado de cada alumno.
   - 2da hora: 15:15 a 17:15
 - **Turno vespertino**:
   - 1ra hora: 17:35 a 19:35
-  - Recreo: 19:35 a 19:55
-  - 2da hora: 19:55 a 21:45
+  - Recreo: 19:35 a 19:45
+  - 2da hora: 19:45 a 21:45
 
 ## 6. Estados de asistencia (alumno)
 

@@ -1,9 +1,15 @@
 <?php
 require_role('preceptor');
+require_once __DIR__ . '/../../controllers/PreceptorController.php';
+
 $nombre = $_SESSION['nombre'] ?? 'Usuario';
 $apellido = $_SESSION['apellido'] ?? '';
 $nombre_completo = trim($nombre . ' ' . $apellido);
-$turno = $_SESSION['turno'] ?? '';
+
+$preceptorId = (int) $_SESSION['usuario_id'];
+$portal = PreceptorController::portalData($preceptorId);
+$usuario = $portal['usuario'];
+$turno = $portal['turnoResumen'];
 ?>
 <link rel="stylesheet" href="../public/assets/css/preceptor.css">
 <link rel="shortcut icon" href="../../public/assets/img/logo.webp" type="image/x-icon">
@@ -17,9 +23,10 @@ $turno = $_SESSION['turno'] ?? '';
     EEST N°1 Eduardo Ader
   </div>
   <div class="topbar-icons">
-    <button class="notif-wrap" onclick="alert('Sin notificaciones nuevas')" aria-label="Notificaciones">
+    <?php $totalNoLeidos = array_sum(array_column($portal['msgs'], 'unread')); ?>
+    <button class="notif-wrap" onclick="showView('mensajes')" aria-label="Notificaciones">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      <span class="notif-badge">3</span>
+      <?php if ($totalNoLeidos > 0): ?><span class="notif-badge"><?= e($totalNoLeidos) ?></span><?php endif; ?>
     </button>
 
     <button onclick="showView('perfil')" aria-label="Abrir perfil">
@@ -111,17 +118,17 @@ $turno = $_SESSION['turno'] ?? '';
     <!-- ══════════ DASHBOARD ══════════ -->
     <section class="view active" id="view-dashboard">
       <div style="margin-bottom:20px">
-        <div class="dash-welcome">Buen día, Preceptor</div>
-        <div class="dash-sub">Resumen de actividad para hoy, 24 de Mayo.</div>
+        <div class="dash-welcome">Buen día, <?= e($nombre) ?></div>
+        <div class="dash-sub">Resumen de actividad para hoy, <?= e($portal['fechaHoyLarga']) ?>.</div>
       </div>
       <div class="grid-2" style="margin-bottom:16px">
         <div class="stat-card-light">
           <div class="stat-label">Asistencia hoy</div>
-          <div class="stat-num">87.5%</div>
+          <div class="stat-num"><?= $portal['asistenciaHoyPct'] !== null ? e($portal['asistenciaHoyPct']) . '%' : '—' ?></div>
         </div>
         <div class="stat-card-light">
           <div class="stat-label">Cursos a cargo</div>
-          <div class="stat-num" style="color:var(--gray-800)">4</div>
+          <div class="stat-num" style="color:var(--gray-800)"><?= e(count($portal['cursos'])) ?></div>
         </div>
       </div>
 
@@ -129,7 +136,7 @@ $turno = $_SESSION['turno'] ?? '';
       <div class="card">
         <div class="section-title">
           Cursos a Cargo
-          <span class="turn-label">Turno Mañana</span>
+          <span class="turn-label"><?= e($turno ?: '—') ?></span>
         </div>
         <table class="course-table">
           <thead>
@@ -140,26 +147,27 @@ $turno = $_SESSION['turno'] ?? '';
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>6° Año 1° División</td>
-              <td><span class="badge badge-green">Completo</span></td>
-              <td><span class="action-link" onclick="showView('historial')">Ver lista</span></td>
-            </tr>
-            <tr>
-              <td>6° Año 2° División</td>
-              <td><span class="badge badge-yellow">Pendiente</span></td>
-              <td><span class="action-link" onclick="openTomarAsistencia('6to 2da – Electrónica')">Tomar</span></td>
-            </tr>
-            <tr>
-              <td>5° Año 1° División</td>
-              <td><span class="badge badge-green">Completo</span></td>
-              <td><span class="action-link" onclick="showView('historial')">Ver lista</span></td>
-            </tr>
-            <tr>
-              <td>5° Año 3° División</td>
-              <td><span class="badge badge-red">Urgente</span></td>
-              <td><span class="action-link" onclick="openTomarAsistencia('5to 3ra – Programación')">Tomar</span></td>
-            </tr>
+            <?php if (empty($portal['cursos'])): ?>
+              <tr><td colspan="3" style="text-align:center;color:var(--gray-400)">No tenés cursos asignados actualmente.</td></tr>
+            <?php else: foreach ($portal['cursos'] as $c): ?>
+              <tr>
+                <td><?= e($c['name']) ?> — <?= e($c['spec']) ?></td>
+                <td>
+                  <?php if ($c['status'] === 'completa'): ?>
+                    <span class="badge badge-green">Completo</span>
+                  <?php else: ?>
+                    <span class="badge badge-yellow">Pendiente</span>
+                  <?php endif; ?>
+                </td>
+                <td>
+                  <?php if ($c['status'] === 'completa'): ?>
+                    <span class="action-link" onclick="showView('historial')">Ver lista</span>
+                  <?php else: ?>
+                    <span class="action-link" onclick="openTomarAsistencia(<?= (int) $c['id'] ?>)">Tomar</span>
+                  <?php endif; ?>
+                </td>
+              </tr>
+            <?php endforeach; endif; ?>
           </tbody>
         </table>
       </div>
@@ -171,16 +179,15 @@ $turno = $_SESSION['turno'] ?? '';
             Avisos de los directivos
           </span>
         </div>
-        <div class="aviso aviso-red">
-          <div class="aviso-title">Reunión de Personal</div>
-          <div class="aviso-body">Hoy a las 17:30hs en Sala de Profesores. Asistencia obligatoria.</div>
-          <div class="aviso-tag">PRIORIDAD ALTA</div>
-        </div>
-        <div class="aviso aviso-gray">
-          <div class="aviso-title" style="color:var(--gray-700)">Feriado 25 de Mayo</div>
-          <div class="aviso-body">Mañana la institución permanecerá cerrada por feriado nacional.</div>
-          <div class="aviso-tag">RECORDATORIO</div>
-        </div>
+        <?php if (empty($portal['avisos'])): ?>
+          <div style="padding:12px 0;color:var(--gray-400);font-size:13px">Sin avisos por el momento.</div>
+        <?php else: foreach ($portal['avisos'] as $aviso): ?>
+          <div class="aviso <?= $aviso['prioridad'] === 'urgente' || $aviso['prioridad'] === 'alta' ? 'aviso-red' : 'aviso-gray' ?>">
+            <div class="aviso-title" style="<?= $aviso['prioridad'] === 'normal' ? 'color:var(--gray-700)' : '' ?>"><?= e($aviso['titulo']) ?></div>
+            <div class="aviso-body"><?= e($aviso['contenido']) ?></div>
+            <div class="aviso-tag">PRIORIDAD <?= e(mb_strtoupper($aviso['prioridad'])) ?></div>
+          </div>
+        <?php endforeach; endif; ?>
       </div>
     </section>
 
@@ -221,15 +228,11 @@ $turno = $_SESSION['turno'] ?? '';
         <div class="attend-selectors">
           <div>
             <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">MÓDULO / HORA</div>
-            <select class="attend-select">
-              <option>1ra Hora (07:35 – 09:35)</option>
-              <option>2da Hora (09:45 – 11:55)</option>
-              <option>3ra Hora (12:00 – 14:00)</option>
-            </select>
+            <select class="attend-select" id="tomar-modulo" onchange="onTomarModuloChange()"></select>
           </div>
           <div>
             <div style="font-size:11px;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">FECHA</div>
-            <input type="date" class="attend-select" value="2026-05-14">
+            <input type="date" class="attend-select" id="tomar-fecha" value="<?= e(date('Y-m-d')) ?>" onchange="onTomarFechaChange()">
           </div>
         </div>
       </div>
@@ -273,7 +276,7 @@ $turno = $_SESSION['turno'] ?? '';
         </table>
         <div class="attend-footer">
           <span class="attend-count" id="attend-count">Mostrando 28 de 28 alumnos matriculados</span>
-          <button class="btn btn-dark" onclick="guardarAsistencia()">
+          <button class="btn btn-dark" id="btn-guardar-asistencia" onclick="guardarAsistencia()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Guardar Asistencia
           </button>
@@ -334,10 +337,9 @@ $turno = $_SESSION['turno'] ?? '';
 
       <div class="alumnos-filters" id="alumnos-filter-bar">
         <button class="chip-btn active" onclick="filterByDivision('todos', this)">Todos</button>
-        <button class="chip-btn" onclick="filterByDivision('7mo 1ra', this)">7mo 1ra</button>
-        <button class="chip-btn" onclick="filterByDivision('7mo 2da', this)">7mo 2da</button>
-        <button class="chip-btn" onclick="filterByDivision('6to 1ra', this)">6to 1ra</button>
-        <button class="chip-btn" onclick="filterByDivision('5to 2da', this)">5to 2da</button>
+        <?php foreach ($portal['cursos'] as $c): ?>
+          <button class="chip-btn" onclick="filterByDivision('<?= e($c['name']) ?>', this)"><?= e($c['name']) ?></button>
+        <?php endforeach; ?>
       </div>
 
       <div class="card" style="padding:0;overflow:hidden">
@@ -353,7 +355,7 @@ $turno = $_SESSION['turno'] ?? '';
           <tbody id="alumnos-tbody"></tbody>
         </table>
         <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--gray-100)">
-          <span class="page-info" id="alumnos-count">Mostrando 10 de 720 alumnos</span>
+          <span class="page-info" id="alumnos-count">Mostrando <?= e(min(10, count($portal['alumnos']))) ?> de <?= e(count($portal['alumnos'])) ?> alumnos</span>
           <div class="pagination">
             <button class="page-btn" onclick="alumnosPage(-1)">&#8592;</button>
             <button class="page-btn" onclick="alumnosPage(1)">&#8594;</button>
@@ -421,10 +423,10 @@ $turno = $_SESSION['turno'] ?? '';
           </div>
           <div>
             <div class="profile-name"><?php echo e($nombre_completo); ?></div>
-            <div style="font-size:13px;color:var(--gray-500);margin-bottom:8px">DNI: 22765231</div>
+            <div style="font-size:13px;color:var(--gray-500);margin-bottom:8px">DNI: <?= e($usuario['dni'] ?? '—') ?></div>
             <div class="profile-tags">
-              <span class="badge badge-gray">Preceptor Titular</span>
-              <span class="badge badge-gray">Turno Mañana</span>
+              <span class="badge badge-gray">Preceptor</span>
+              <?php if ($turno): ?><span class="badge badge-gray"><?= e($turno) ?></span><?php endif; ?>
             </div>
           </div>
         </div>
@@ -441,17 +443,17 @@ $turno = $_SESSION['turno'] ?? '';
         <hr class="div">
         <div class="profile-data-row">
           <div class="profile-data-label">Correo Institucional</div>
-          <div class="profile-data-val">buenasbuenas@abc.gob.ar</div>
+          <div class="profile-data-val"><?= e($usuario['email'] ?? '—') ?></div>
         </div>
         <div class="profile-data-row">
           <div class="profile-data-label">Fecha de Registro</div>
-          <div class="profile-data-val">15 de Marzo, 2020</div>
+          <div class="profile-data-val"><?= e($usuario['created_at'] ? format_date_long_argentina($usuario['created_at']) : '—') ?></div>
         </div>
         <div class="profile-data-row" style="border-bottom:none">
           <div class="profile-data-label">Estado Administrativo</div>
           <div class="profile-data-val" style="display:flex;align-items:center;gap:6px">
             <span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block"></span>
-            Personal de Planta Permanente
+            <?= $usuario['estado'] === 'activo' ? 'Cuenta activa' : e(ucfirst($usuario['estado'])) ?>
           </div>
         </div>
         <hr class="div">
@@ -469,15 +471,52 @@ $turno = $_SESSION['turno'] ?? '';
           </span>
           <a href="#" class="action-link" onclick="showView('asistencia');return false">Ver todos los cursos →</a>
         </div>
-        <div class="course-list-item"><span class="course-list-name">4to 1ra – Electronica</span><span class="badge badge-blue">Activo</span></div>
-        <div class="course-list-item"><span class="course-list-name">5to 3ra – Programación</span><span class="badge badge-blue">Activo</span></div>
-        <div class="course-list-item"><span class="course-list-name">3ro 1ra – Ciclo Básico</span><span class="badge badge-blue">Activo</span></div>
+        <?php if (empty($portal['cursos'])): ?>
+          <div style="padding:8px 0;color:var(--gray-400);font-size:13px">Sin cursos asignados.</div>
+        <?php else: foreach ($portal['cursos'] as $c): ?>
+          <div class="course-list-item"><span class="course-list-name"><?= e($c['name']) ?> – <?= e($c['spec']) ?></span><span class="badge badge-blue">Activo</span></div>
+        <?php endforeach; endif; ?>
       </div>
     </section>
 
   </main>
 </div>
 
-<script src="../public/assets/js/preceptor.js?v=2"></script>
+<script>
+  // Datos reales inyectados por el servidor (reemplazan los mocks
+  // hardcodeados que tenía preceptor.js). Ver PreceptorController::portalData().
+  window.SERVER_DATA = <?php
+    $bloques = [
+      'mañana' => [Asistencia::getBloqueHorarioInfo('mañana', 'primera_hora'), Asistencia::getBloqueHorarioInfo('mañana', 'segunda_hora')],
+      'tarde' => [Asistencia::getBloqueHorarioInfo('tarde', 'primera_hora'), Asistencia::getBloqueHorarioInfo('tarde', 'segunda_hora')],
+      'vespertino' => [Asistencia::getBloqueHorarioInfo('vespertino', 'primera_hora'), Asistencia::getBloqueHorarioInfo('vespertino', 'segunda_hora')],
+    ];
+    // Horario real por curso (asignaciones_materias), recortado a lo que
+    // necesita el selector de "Tomar Asistencia": qué materia corresponde a
+    // cada día/horario — nunca se inventa ni se deja elegir un materia_id
+    // que no esté realmente agendado (el backend vuelve a validar esto).
+    $horariosPorCurso = [];
+    foreach ($portal['horariosPorCurso'] as $cid => $asignaciones) {
+      $horariosPorCurso[$cid] = array_map(fn($a) => [
+        'materiaId' => (int) $a['materia_id'],
+        'materiaNombre' => $a['materia_nombre'],
+        'diaSemana' => (int) $a['dia_semana'],
+        'horaInicio' => substr($a['hora_inicio'], 0, 5),
+        'horaFin' => substr($a['hora_fin'], 0, 5),
+      ], $asignaciones);
+    }
+
+    echo json_encode([
+      'cursos' => $portal['cursos'],
+      'alumnos' => $portal['alumnos'],
+      'historial' => $portal['historial'],
+      'msgs' => $portal['msgs'],
+      'bloques' => $bloques,
+      'horariosPorCurso' => $horariosPorCurso,
+      'csrfToken' => csrf_token(),
+    ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+  ?>;
+</script>
+<script src="../public/assets/js/preceptor.js?v=3"></script>
 
 </div>

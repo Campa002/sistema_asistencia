@@ -73,6 +73,40 @@ function format_date_long_argentina(?string $date = 'now'): string {
     return sprintf('%s, %d de %s de %d', $dia, (int) $dateTime->format('d'), $mes, (int) $dateTime->format('Y'));
 }
 
+/**
+ * Fecha corta en español, ej. "24 may, 2026" — para tarjetas/listas de los
+ * portales de rol donde no entra la fecha larga. Mismo criterio que
+ * format_date_long_argentina(): IntlDateFormatter si está disponible, con
+ * mapa de respaldo manual, siempre en español y sin depender del locale del
+ * sistema operativo.
+ */
+function format_date_short_argentina(?string $date = 'now'): string {
+    $timezone = new DateTimeZone('America/Argentina/Buenos_Aires');
+    $dateTime = $date instanceof DateTimeInterface
+        ? DateTimeImmutable::createFromInterface($date)->setTimezone($timezone)
+        : new DateTimeImmutable($date ?: 'now', $timezone);
+
+    if (class_exists('IntlDateFormatter')) {
+        $formatter = new IntlDateFormatter(
+            'es_AR',
+            IntlDateFormatter::NONE,
+            IntlDateFormatter::NONE,
+            'America/Argentina/Buenos_Aires',
+            IntlDateFormatter::GREGORIAN,
+            "d MMM, y"
+        );
+        $formatted = $formatter->format($dateTime);
+        if ($formatted !== false) {
+            return rtrim(str_replace('.', '', $formatted));
+        }
+    }
+
+    $meses = ['January' => 'Ene', 'February' => 'Feb', 'March' => 'Mar', 'April' => 'Abr', 'May' => 'May', 'June' => 'Jun', 'July' => 'Jul', 'August' => 'Ago', 'September' => 'Sep', 'October' => 'Oct', 'November' => 'Nov', 'December' => 'Dic'];
+    $mes = $meses[$dateTime->format('F')] ?? $dateTime->format('M');
+
+    return sprintf('%d %s, %d', (int) $dateTime->format('d'), $mes, (int) $dateTime->format('Y'));
+}
+
 function get_role_name(string $role): string {
     return [
         'admin'      => 'Administrador',
@@ -88,10 +122,10 @@ function dashboard_url_by_role(?string $role = null): string {
     if (!$rol) return url('index.php?page=login');
     return url([
         'admin'      => 'index.php?page=admin/dashboard',
-        'directivo'  => 'index.php?page=directivo/dashboard',
-        'preceptor'  => 'index.php?page=preceptor/dashboard',
-        'alumno'     => 'index.php?page=alumno/dashboard',
-        'padre_tutor'=> 'index.php?page=padre_tutor/dashboard',
+        'directivo'  => 'index.php?page=directivo/directivo',
+        'preceptor'  => 'index.php?page=preceptor/preceptor',
+        'alumno'     => 'index.php?page=alumno/alumnos',
+        'padre_tutor'=> 'index.php?page=padre_tutor/padre-tutor',
     ][$rol] ?? 'index.php?page=login');
 }
 

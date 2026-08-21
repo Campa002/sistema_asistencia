@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../models/Usuario.php';
+require_once __DIR__ . '/../models/LogActividad.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
@@ -32,9 +33,14 @@ class AdminUsuariosController {
 
     public static function create() {
         require_role('admin');
-        
+
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
+        }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/usuarios');
+            return;
         }
 
         $data = [
@@ -67,7 +73,16 @@ class AdminUsuariosController {
         }
 
         try {
-            Usuario::create($data);
+            $nuevoId = Usuario::create($data);
+            LogActividad::registrar(
+                $_SESSION['usuario_id'],
+                'CREAR_USUARIO',
+                "Creó el usuario \"{$data['apellido']}, {$data['nombre']}\" (rol {$data['rol']})",
+                'usuarios',
+                (int) $nuevoId,
+                null,
+                array_diff_key($data, ['password' => null])
+            );
             flash('success', 'Usuario creado exitosamente');
         } catch (PDOException $e) {
             if (str_contains($e->getMessage(), 'Duplicate entry')) {
@@ -86,10 +101,22 @@ class AdminUsuariosController {
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
         }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/usuarios');
+            return;
+        }
 
         $id = input('id', 0);
         if (!$id) {
             flash('errors', ['ID de usuario inválido']);
+            redirect('index.php?page=admin/usuarios');
+            return;
+        }
+
+        $anterior = Usuario::getById($id);
+        if (!$anterior) {
+            flash('errors', ['Usuario no encontrado']);
             redirect('index.php?page=admin/usuarios');
             return;
         }
@@ -106,6 +133,18 @@ class AdminUsuariosController {
 
         try {
             Usuario::update($id, $data);
+            $camposSinPassword = array_diff_key($data, ['password' => null]);
+            if (!empty($camposSinPassword)) {
+                LogActividad::registrar(
+                    $_SESSION['usuario_id'],
+                    'ACTUALIZAR_USUARIO',
+                    "Actualizó el usuario \"{$anterior['apellido']}, {$anterior['nombre']}\" (ID $id)",
+                    'usuarios',
+                    (int) $id,
+                    array_intersect_key($anterior, $camposSinPassword),
+                    $camposSinPassword
+                );
+            }
             flash('success', 'Usuario actualizado exitosamente');
         } catch (PDOException $e) {
             if (str_contains($e->getMessage(), 'Duplicate entry')) {
@@ -123,6 +162,11 @@ class AdminUsuariosController {
 
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
+        }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/usuarios');
+            return;
         }
 
         $id = input('id', 0);
@@ -142,6 +186,15 @@ class AdminUsuariosController {
         $nuevoEstado = $usuario['estado'] === 'activo' ? 'inactivo' : 'activo';
         Usuario::update($id, ['estado' => $nuevoEstado]);
         $mensaje = $nuevoEstado === 'activo' ? 'activado' : 'desactivado';
+        LogActividad::registrar(
+            $_SESSION['usuario_id'],
+            $nuevoEstado === 'activo' ? 'ACTIVAR_USUARIO' : 'DESACTIVAR_USUARIO',
+            "Usuario \"{$usuario['apellido']}, {$usuario['nombre']}\" (ID $id) $mensaje",
+            'usuarios',
+            (int) $id,
+            ['estado' => $usuario['estado']],
+            ['estado' => $nuevoEstado]
+        );
         flash('success', "Usuario $mensaje exitosamente");
         redirect('index.php?page=admin/usuarios');
     }
@@ -151,6 +204,11 @@ class AdminUsuariosController {
 
         if (!is_post()) {
             return ['success' => false, 'message' => 'Método no permitido'];
+        }
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/usuarios');
+            return;
         }
 
         $id = input('id', 0);
@@ -166,8 +224,24 @@ class AdminUsuariosController {
             return;
         }
 
+        $usuario = Usuario::getById($id);
+        if (!$usuario) {
+            flash('errors', ['Usuario no encontrado']);
+            redirect('index.php?page=admin/usuarios');
+            return;
+        }
+
         try {
             Usuario::delete($id);
+            LogActividad::registrar(
+                $_SESSION['usuario_id'],
+                'ELIMINAR_USUARIO',
+                "Eliminó el usuario \"{$usuario['apellido']}, {$usuario['nombre']}\" (ID $id, rol {$usuario['rol']})",
+                'usuarios',
+                (int) $id,
+                array_diff_key($usuario, ['password_hash' => null]),
+                null
+            );
             flash('success', 'Usuario eliminado exitosamente');
         } catch (PDOException $e) {
             flash('errors', ['Error al eliminar el usuario']);

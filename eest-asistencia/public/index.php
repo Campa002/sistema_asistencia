@@ -37,6 +37,42 @@ if ($page === 'admin/reportes/autocomplete_alumnos') {
     exit;
 }
 
+if ($page === 'admin/reportes/detalle_alumno') {
+    require_once __DIR__ . '/../controllers/AdminReportesController.php';
+    AdminReportesController::detalleAlumno();
+    exit;
+}
+
+if ($page === 'admin/configuracion/descargar_backup') {
+    require_once __DIR__ . '/../controllers/AdminGestionTecnicaController.php';
+    AdminGestionTecnicaController::descargarBackup();
+    exit;
+}
+
+if ($page === 'preceptor/enviar_mensaje_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::enviarMensajeAjax();
+    exit;
+}
+
+if ($page === 'preceptor/guardar_asistencia_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::guardarAsistenciaAjax();
+    exit;
+}
+
+if ($page === 'padre_tutor/enviar_mensaje_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PadreTutorController.php';
+    PadreTutorController::enviarMensajeAjax();
+    exit;
+}
+
+if ($page === 'alumno/enviar_mensaje_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/AlumnoController.php';
+    AlumnoController::enviarMensajeAjax();
+    exit;
+}
+
 if (is_post()) {
     require_once __DIR__ . '/../controllers/AuthController.php';
     require_once __DIR__ . '/../controllers/AdminAsistenciasController.php';
@@ -44,6 +80,10 @@ if (is_post()) {
     require_once __DIR__ . '/../controllers/AdminCursosController.php';
     require_once __DIR__ . '/../controllers/AdminMensajesController.php';
     require_once __DIR__ . '/../controllers/AdminReportesController.php';
+    require_once __DIR__ . '/../controllers/AdminComunicadosController.php';
+    require_once __DIR__ . '/../controllers/AdminGestionTecnicaController.php';
+    require_once __DIR__ . '/../controllers/AdminPerfilController.php';
+    require_once __DIR__ . '/../controllers/AdminMateriasController.php';
     $action = input('action', '');
 
     switch ($action) {
@@ -89,7 +129,38 @@ if (is_post()) {
             AdminMensajesController::handlePost();
             break;
         case 'exportar_csv':
+        case 'exportar_pdf':
             AdminReportesController::handlePost();
+            break;
+        case 'admin_create_comunicado':
+            AdminComunicadosController::create();
+            break;
+        case 'admin_update_comunicado':
+            AdminComunicadosController::update();
+            break;
+        case 'admin_toggle_comunicado':
+            AdminComunicadosController::toggleActivo();
+            break;
+        case 'admin_actualizar_configuracion':
+            AdminGestionTecnicaController::actualizarConfiguracion();
+            break;
+        case 'admin_ejecutar_backup':
+            AdminGestionTecnicaController::ejecutarBackup();
+            break;
+        case 'admin_actualizar_perfil':
+            AdminPerfilController::actualizarPerfil();
+            break;
+        case 'admin_cambiar_password':
+            AdminPerfilController::cambiarPassword();
+            break;
+        case 'admin_create_materia':
+            AdminMateriasController::create();
+            break;
+        case 'admin_update_materia':
+            AdminMateriasController::update();
+            break;
+        case 'admin_toggle_estado_materia':
+            AdminMateriasController::toggleEstado();
             break;
     }
 }
@@ -120,6 +191,7 @@ $protected_routes = [
     'admin/usuarios'        => ['admin'],
     'admin/cursos'          => ['admin'],
     'admin/materias'        => ['admin'],
+    'admin/horarios'        => ['admin'],
     'admin/asistencias'     => ['admin'],
     'admin/mensajes'        => ['admin'],
     'admin/reportes'        => ['admin'],
@@ -127,6 +199,7 @@ $protected_routes = [
     'admin/configuracion'   => ['admin'],
 
     'directivo/dashboard'   => ['directivo'],
+    'directivo/directivo'   => ['directivo'],
     'directivo/solicitudes' => ['directivo'],
     'directivo/vinculaciones'=> ['directivo'],
     'directivo/reemplazos'  => ['directivo'],
@@ -160,6 +233,24 @@ if (isset($protected_routes[$page])) {
     if (!has_any_role($required_roles)) {
         redirect('index.php?page=unauthorized');
     }
+}
+
+// ========================================
+// 4b. Modo mantenimiento (chequeo centralizado)
+// ========================================
+// Bloquea a TODOS los roles no-admin en TODO el sistema mientras
+// `mantenimiento_modo` esté activo. El admin siempre puede seguir
+// trabajando. No es un redirect (evita loops): se renderiza acá mismo
+// la página de mantenimiento y se corta la ejecución.
+require_once __DIR__ . '/../models/ConfiguracionSistema.php';
+$rutas_permitidas_en_mantenimiento = ['login', 'unauthorized'];
+$mantenimiento_activo = ConfiguracionSistema::getValor('mantenimiento_modo', '0') === '1';
+$es_admin_logueado = is_logged_in() && has_role('admin');
+
+if ($mantenimiento_activo && !$es_admin_logueado && !in_array($page, $rutas_permitidas_en_mantenimiento, true)) {
+    http_response_code(503);
+    require __DIR__ . '/../views/errors/mantenimiento.php';
+    exit;
 }
 
 // ========================================

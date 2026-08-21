@@ -13,7 +13,7 @@ $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
 
 <div class="dashboard-wrapper">
     <?php require __DIR__ . '/../layouts/sidebar.php'; ?>
-    
+
     <main class="main-content">
         <header class="dashboard-header">
             <div class="dashboard-header-left">
@@ -21,20 +21,20 @@ $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
             </div>
             <div class="dashboard-header-right">
                 <div class="header-actions">
-                    <button class="header-btn">
+                    <a href="index.php?page=admin/comunicados" class="header-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                         </svg>
                         Comunicado Global
-                    </button>
+                    </a>
                     <button class="header-icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                         </svg>
                     </button>
-                    <a href="<?= url('index.php?page=admin/configuracion') ?>" class="header-icon-btn" style="text-decoration: none;">
+                    <a href="index.php?page=admin/configuracion" class="header-icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="3"/>
                             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -55,7 +55,7 @@ $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
                 </div>
             </div>
         </header>
-        
+
         <div class="dashboard-body">
             <div class="page-header">
                 <div class="page-title">
@@ -63,7 +63,20 @@ $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
                     <p>Administra tus datos de usuario y preferencias del sistema.</p>
                 </div>
             </div>
-            
+
+            <?php if (has_flash('success')): ?>
+                <div class="alert alert-success" style="padding: 16px; border-radius: 8px; background: #d4edda; color: #155724; margin-top: 24px;">
+                    <?= e(flash('success')) ?>
+                </div>
+            <?php endif; ?>
+            <?php if (has_flash('errors')): ?>
+                <div class="alert alert-danger" style="padding: 16px; border-radius: 8px; background: #f8d7da; color: #721c24; margin-top: 24px;">
+                    <?php foreach (flash('errors') as $error): ?>
+                        <div><?= e($error) ?></div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+
             <div style="margin-top: 32px; display: grid; grid-template-columns: 2fr 1fr; gap: 32px;">
                 <div>
                     <div class="dashboard-card" style="border: 2px solid #DEE2E6;">
@@ -121,14 +134,14 @@ $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
                             <h3>Acciones</h3>
                         </div>
                         <div style="padding: 24px 0;">
-                            <button class="btn-outline" style="width: 100%; margin-bottom: 16px;">
+                            <button type="button" class="btn-outline" style="width: 100%; margin-bottom: 16px;" onclick="openModal('editProfileModal')">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
                                     <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
                                 </svg>
                                 Editar Perfil
                             </button>
-                            <button class="btn-outline" style="width: 100%; margin-bottom: 16px;">
+                            <button type="button" class="btn-outline" style="width: 100%; margin-bottom: 16px;" onclick="openModal('changePasswordModal')">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                                     <line x1="9" y1="10" x2="15" y2="10"/>
@@ -153,4 +166,82 @@ $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
             </div>
         </div>
     </main>
+
+    <!-- Editar Perfil Modal -->
+    <div id="editProfileModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: white; border-radius: 12px; padding: 32px; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <h2 style="margin: 0; color: #071D3A;">Editar Perfil</h2>
+                <button type="button" onclick="closeModal('editProfileModal')" style="background: transparent; border: none; cursor: pointer; font-size: 24px; color: #6C757D;">&times;</button>
+            </div>
+            <form method="POST" action="index.php">
+                <input type="hidden" name="action" value="admin_actualizar_perfil">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Nombre</label>
+                        <input type="text" name="nombre" required class="filter-input" style="width: 100%;" value="<?= e($usuario['nombre']) ?>">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Apellido</label>
+                        <input type="text" name="apellido" required class="filter-input" style="width: 100%;" value="<?= e($usuario['apellido']) ?>">
+                    </div>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Email</label>
+                    <input type="email" name="email" required class="filter-input" style="width: 100%;" value="<?= e($usuario['email']) ?>">
+                </div>
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Teléfono</label>
+                    <input type="text" name="telefono" class="filter-input" style="width: 100%;" value="<?= e($usuario['telefono'] ?? '') ?>">
+                </div>
+                <p style="color: #6C757D; font-size: 13px; margin-bottom: 24px;">El rol (<?= e($usuario['rol']) ?>) no se puede modificar desde acá.</p>
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button type="button" class="btn-outline" onclick="closeModal('editProfileModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Cambiar Contraseña Modal -->
+    <div id="changePasswordModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+        <div class="modal-content" style="background: white; border-radius: 12px; padding: 32px; max-width: 460px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <h2 style="margin: 0; color: #071D3A;">Cambiar Contraseña</h2>
+                <button type="button" onclick="closeModal('changePasswordModal')" style="background: transparent; border: none; cursor: pointer; font-size: 24px; color: #6C757D;">&times;</button>
+            </div>
+            <form method="POST" action="index.php">
+                <input type="hidden" name="action" value="admin_cambiar_password">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Contraseña actual</label>
+                    <input type="password" name="password_actual" required class="filter-input" style="width: 100%;" autocomplete="current-password">
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Nueva contraseña</label>
+                    <input type="password" name="password_nueva" required minlength="8" class="filter-input" style="width: 100%;" autocomplete="new-password">
+                </div>
+                <div style="margin-bottom: 24px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Confirmar nueva contraseña</label>
+                    <input type="password" name="password_confirmacion" required minlength="8" class="filter-input" style="width: 100%;" autocomplete="new-password">
+                </div>
+                <p style="color: #6C757D; font-size: 13px; margin-bottom: 24px;">Mínimo 8 caracteres.</p>
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button type="button" class="btn-outline" onclick="closeModal('changePasswordModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Actualizar Contraseña</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
+
+<script>
+function openModal(modalId) {
+    document.getElementById(modalId).style.display = 'flex';
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+</script>

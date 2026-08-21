@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../models/Mensaje.php';
 require_once __DIR__ . '/../models/Usuario.php';
+require_once __DIR__ . '/../models/LogActividad.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
@@ -63,7 +64,17 @@ class AdminMensajesController {
         require_role('admin');
         $userId = $_SESSION['usuario_id'];
         $action = input('action', '');
-        
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            $queryParams = ['page' => 'admin/mensajes'];
+            if (isset($_GET['conversacion_id'])) {
+                $queryParams['conversacion_id'] = $_GET['conversacion_id'];
+            }
+            redirect('index.php?' . http_build_query($queryParams));
+            return;
+        }
+
         switch ($action) {
             case 'enviar_mensaje':
                 self::enviarMensaje($userId);
@@ -83,6 +94,17 @@ class AdminMensajesController {
             $conversacion = Mensaje::getConversacionById($conversacionId, $userId);
             if ($conversacion) {
                 Mensaje::enviarMensaje($conversacionId, $userId, $contenido);
+                // No se guarda el contenido del mensaje en la auditoría (es
+                // comunicación institucional privada) — solo metadata.
+                LogActividad::registrar(
+                    $userId,
+                    'ENVIAR_MENSAJE',
+                    "Envió un mensaje en la conversación #$conversacionId",
+                    'mensajes',
+                    $conversacionId,
+                    null,
+                    null
+                );
             }
         }
         
@@ -115,7 +137,16 @@ class AdminMensajesController {
             if ($isAllowed) {
                 $conversacionId = Mensaje::crearConversacion([$userId, $destinatarioId]);
                 Mensaje::enviarMensaje($conversacionId, $userId, $contenido);
-                
+                LogActividad::registrar(
+                    $userId,
+                    'CREAR_CONVERSACION',
+                    "Inició una conversación con el usuario #$destinatarioId",
+                    'conversaciones',
+                    (int) $conversacionId,
+                    null,
+                    null
+                );
+
                 redirect('index.php?page=admin/mensajes&conversacion_id=' . $conversacionId);
             }
         }

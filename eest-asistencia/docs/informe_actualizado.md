@@ -120,11 +120,13 @@ Un curso puede tener uno o dos turnos. Se permiten mañana+tarde o tarde+vespert
 
 ## 11. Bloques horarios
 
+(Corregidos según los Excel institucionales "Horarios ciclo básico" y "horarios ciclo superior", agosto 2026)
+
 ### Turno mañana
 
 - 1ra hora: 07:35 a 09:35.
-- Recreo: 09:35 a 09:45.
-- 2da hora: 09:45 a 11:55.
+- Recreo: 09:35 a 09:55.
+- 2da hora: 09:55 a 11:55.
 
 ### Almuerzo
 
@@ -139,8 +141,8 @@ Un curso puede tener uno o dos turnos. Se permiten mañana+tarde o tarde+vespert
 ### Turno vespertino
 
 - 1ra hora: 17:35 a 19:35.
-- Recreo: 19:35 a 19:55.
-- 2da hora: 19:55 a 21:45.
+- Recreo: 19:35 a 19:45.
+- 2da hora: 19:45 a 21:45.
 
 En base se guardan como `primera_hora` y `segunda_hora`; en pantalla se muestran como “1ra hora” y “2da hora”.
 

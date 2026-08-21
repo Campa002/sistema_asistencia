@@ -10,7 +10,21 @@
     'pantalla-perfil': 'nav-perfil'
   };
 
-  let calendarioFecha = new Date(2026, 4, 1);
+  // Datos reales inyectados por el servidor (ver alumnos.php -> window.SERVER_DATA),
+  // generados por AlumnoController::portalData() a partir de la BD real.
+  const SD = window.SERVER_DATA || { calendario: {}, msgs: [], csrfToken: '' };
+
+  // Arranca en el mes más reciente que tenga registros reales (si no hay
+  // ninguno, en el mes actual) — antes arrancaba siempre en Mayo 2026 fijo.
+  let calendarioFecha = (function () {
+    const claves = Object.keys(SD.calendario).sort();
+    if (claves.length > 0) {
+      const partes = claves[claves.length - 1].split('-').map(Number);
+      return new Date(partes[0], partes[1] - 1, 1);
+    }
+    const hoy = new Date();
+    return new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  })();
 
   function byId(id) {
     return document.getElementById(id);
@@ -86,6 +100,10 @@
 
     destino.classList.add('activa');
 
+    if (id === 'pantalla-mensajes' && typeof renderConversaciones === 'function') {
+      renderConversaciones();
+    }
+
     const navId = SCREEN_TO_NAV[id];
     const nav = navId ? byId(navId) : null;
 
@@ -143,26 +161,80 @@
       });
   };
 
-  window.abrirChat = function (evento) {
-    document
-      .querySelectorAll(
-        '#alumno-portal-root .conversacion-item'
-      )
-      .forEach(function (conversacion) {
-        conversacion.classList.remove('activa');
-      });
+  // ─── MENSAJES (conversaciones reales, ver Mensaje.php) ───
+  let activeConv = null;
 
-    const actual =
-      evento && evento.currentTarget
-        ? evento.currentTarget
-        : null;
+  function iniciales(nombre) {
+    return (nombre || '?')
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(function (p) { return p[0].toUpperCase(); })
+      .join('');
+  }
 
-    if (actual) {
-      actual.classList.add('activa');
+  function renderConversaciones() {
+    const lista = byId('conversaciones-lista');
+    const vacio = byId('mensajes-vacio');
+    if (!lista) return;
+
+    if (!SD.msgs.length) {
+      lista.innerHTML = '';
+      if (vacio) vacio.style.display = 'block';
+      return;
     }
+    if (vacio) vacio.style.display = 'none';
+
+    lista.innerHTML = SD.msgs.map(function (m) {
+      return '<div class="conversacion-item' + (activeConv === m.id ? ' activa' : '') + '" onclick="abrirChat(' + m.id + ')">' +
+        '<div class="conv-avatar">' + iniciales(m.nombre) + '</div>' +
+        '<div style="flex:1; min-width:0;">' +
+          '<div class="conv-nombre">' + m.nombre + '</div>' +
+          '<div class="conv-rol">' + m.rol + '</div>' +
+          '<div class="conv-preview">' + m.preview + '</div>' +
+        '</div>' +
+        '<div class="conv-hora">' + m.hora + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function renderChatMensajes(conv) {
+    const body = byId('chat-mensajes');
+    if (!body) return;
+    if (!conv.conversation.length) {
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#6C757D;font-size:14px;">Sin mensajes todavía. Escribí el primero.</div>';
+      return;
+    }
+    body.innerHTML = conv.conversation.map(function (msg) {
+      const claseHora = msg.dir === 'enviado' ? 'mensaje-hora der' : 'mensaje-hora';
+      return '<div class="mensaje-burbuja ' + msg.dir + '">' + msg.text + '</div>' +
+        '<div class="' + claseHora + '">' + msg.time + '</div>';
+    }).join('');
+    body.scrollTop = body.scrollHeight;
+  }
+
+  window.abrirChat = function (id) {
+    activeConv = id;
+    const conv = SD.msgs.find(function (m) { return m.id === id; });
+    if (!conv) return;
+
+    renderConversaciones();
+
+    const cabecera = byId('chat-cabecera');
+    const vacioMsg = byId('chat-mensajes-vacio');
+    if (cabecera) cabecera.style.display = 'flex';
+    if (vacioMsg) vacioMsg.style.display = 'none';
+
+    const avatar = byId('chat-avatar');
+    if (avatar) avatar.textContent = iniciales(conv.nombre);
+    const nombreEl = byId('chat-nombre');
+    if (nombreEl) nombreEl.textContent = conv.nombre;
+    const rolEl = byId('chat-rol');
+    if (rolEl) rolEl.textContent = conv.rol;
+
+    renderChatMensajes(conv);
 
     const panel = byId('panel-chat');
-
     if (panel && window.innerWidth <= 640) {
       panel.classList.add('activo');
     }
@@ -188,91 +260,58 @@
 
   window.enviarMensajeClick = function () {
     const campo = byId('campo-mensaje');
-
-    const chat = document.querySelector(
-      '#alumno-portal-root .chat-mensajes'
-    );
-
-    if (!campo || !chat) {
-      return;
-    }
+    if (!campo || activeConv === null) return;
 
     const texto = campo.value.trim();
+    if (texto === '') return;
 
-    if (texto === '') {
-      return;
-    }
-
-    const burbuja = document.createElement('div');
-    burbuja.className = 'mensaje-burbuja enviado';
-    burbuja.textContent = texto;
-
-    const hora = document.createElement('div');
-    hora.className = 'mensaje-hora der';
-
-    const ahora = new Date();
-
-    hora.textContent = ahora.toLocaleTimeString(
-      'es-AR',
-      {
-        hour: '2-digit',
-        minute: '2-digit'
-      }
-    );
-
-    chat.appendChild(burbuja);
-    chat.appendChild(hora);
-
-    chat.scrollTop = chat.scrollHeight;
+    const conv = SD.msgs.find(function (m) { return m.id === activeConv; });
+    if (!conv) return;
 
     campo.value = '';
-    campo.focus();
+    campo.disabled = true;
+
+    fetch('index.php?page=alumno/enviar_mensaje_ajax', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ conversacion_id: activeConv, contenido: texto, csrf_token: SD.csrfToken })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        campo.disabled = false;
+        campo.focus();
+        if (!data.ok) {
+          alert(data.error || 'No se pudo enviar el mensaje.');
+          campo.value = texto;
+          return;
+        }
+        conv.conversation.push({ dir: 'enviado', text: texto, time: data.hora || '' });
+        conv.preview = texto;
+        renderChatMensajes(conv);
+        renderConversaciones();
+      })
+      .catch(function () {
+        campo.disabled = false;
+        alert('No se pudo enviar el mensaje. Verificá tu conexión.');
+        campo.value = texto;
+      });
   };
 
   function estadoCalendario(anio, mes, dia) {
-    if (anio !== 2026 || mes !== 4) {
-      return '';
-    }
+    const hoy = new Date();
+    const esHoy = anio === hoy.getFullYear() &&
+      mes === hoy.getMonth() &&
+      dia === hoy.getDate();
 
-    const presentes = [
-      1,
-      2,
-      3,
-      6,
-      8,
-      9,
-      13,
-      17
-    ];
-
-    const tardes = [
-      7,
-      16
-    ];
-
-    const ausentes = [
-      10,
-      14,
-      15
-    ];
-
-    if (presentes.includes(dia)) {
-      return 'presente';
-    }
-
-    if (tardes.includes(dia)) {
-      return 'tarde';
-    }
-
-    if (ausentes.includes(dia)) {
-      return 'ausente';
-    }
-
-    if (dia === 20) {
+    if (esHoy) {
       return 'hoy';
     }
 
-    return '';
+    const clave = anio + '-' +
+      String(mes + 1).padStart(2, '0') + '-' +
+      String(dia).padStart(2, '0');
+
+    return SD.calendario[clave] || '';
   }
 
   function renderizarCalendarioAlumno() {

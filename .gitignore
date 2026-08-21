@@ -1,0 +1,6 @@
+# Configuración local sensible (nunca commitear API keys reales)
+eest-asistencia/config/email.local.php
+
+# Backups generados de la base de datos (contienen datos reales de alumnos/usuarios)
+eest-asistencia/backups/*.sql
+!eest-asistencia/backups/.gitkeep

@@ -1,8 +1,14 @@
 <?php
 require_role('padre_tutor');
+require_once __DIR__ . '/../../controllers/PadreTutorController.php';
+
 $nombre = $_SESSION['nombre'] ?? 'Usuario';
 $apellido = $_SESSION['apellido'] ?? '';
 $nombre_completo = trim($nombre . ' ' . $apellido);
+
+$padreTutorId = (int) $_SESSION['usuario_id'];
+$portal = PadreTutorController::portalData($padreTutorId);
+$usuario = $portal['usuario'];
 ?>
 <link rel="stylesheet" href="../public/assets/css/padretutor.css">
 <div id="pt-portal-root">
@@ -14,21 +20,17 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
 <!-- NOTIF PANEL -->
 <div class="notif-panel" id="notif-panel">
   <div class="notif-panel-header">Notificaciones</div>
-  <div class="notif-p-item">
-    <div class="notif-p-title">⚠️ Llegada tarde registrada</div>
-    <div class="notif-p-body">Lucas llegó 15 minutos tarde hoy a las 07:45 hs.</div>
-    <div class="notif-p-time">Hace 2 horas</div>
-  </div>
-  <div class="notif-p-item">
-    <div class="notif-p-title">📅 Reunión de Padres – 15 Oct</div>
-    <div class="notif-p-body">Sala de Profesores, 18:00 hs. Asistencia obligatoria.</div>
-    <div class="notif-p-time">Ayer</div>
-  </div>
-  <div class="notif-p-item">
-    <div class="notif-p-title">✅ Justificación aprobada</div>
-    <div class="notif-p-body">La inasistencia del 02/10 fue aprobada por el preceptor.</div>
-    <div class="notif-p-time">Hace 3 días</div>
-  </div>
+  <?php if (empty($portal['notificaciones'])): ?>
+    <div class="notif-p-item"><div class="notif-p-body">Sin notificaciones nuevas.</div></div>
+  <?php else: foreach ($portal['notificaciones'] as $n):
+      $emoji = ['alerta' => '⚠️', 'aviso' => '📅', 'recordatorio' => '🔔'][$n['tipo']] ?? '🔔';
+  ?>
+    <div class="notif-p-item">
+      <div class="notif-p-title"><?= $emoji ?> <?= e($n['titulo']) ?></div>
+      <div class="notif-p-body"><?= e($n['contenido']) ?></div>
+      <div class="notif-p-time"><?= e(format_date_short_argentina($n['created_at'])) ?></div>
+    </div>
+  <?php endforeach; endif; ?>
 </div>
 
 <!-- TOPBAR -->
@@ -45,7 +47,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
   <div class="topbar-icons">
     <button class="notif-wrap" onclick="toggleNotifPanel()">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      <span class="notif-badge">3</span>
+      <?php if (!empty($portal['notificaciones'])): ?><span class="notif-badge"><?= e(count($portal['notificaciones'])) ?></span><?php endif; ?>
     </button>
   </div>
 </header>
@@ -59,7 +61,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
       </div>
       <div class="sidebar-name"><?php echo e($apellido . ', ' . $nombre); ?></div>
-      <div class="sidebar-role">Tutora – Lucas García</div>
+      <div class="sidebar-role"><?= $portal['sinAlumnoVinculado'] ? 'Sin alumno vinculado' : 'Tutor/a – ' . e(trim($portal['alumno']['nombre'] . ' ' . $portal['alumno']['apellido'])) ?></div>
     </div>
     <div class="sidebar-nav">
       <div class="nav-item active" id="nav-resumen" onclick="showView('resumen')">
@@ -73,7 +75,8 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
       <div class="nav-item" id="nav-mensajes" onclick="showView('mensajes')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Mensajes
-        <span class="badge-notif">2</span>
+        <?php $noLeidosPT = count(array_filter($portal['msgs'], fn($m) => $m['unread'])); ?>
+        <?php if ($noLeidosPT > 0): ?><span class="badge-notif"><?= e($noLeidosPT) ?></span><?php endif; ?>
       </div>
       <div class="nav-item" id="nav-perfil" onclick="showView('perfil')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
@@ -94,24 +97,43 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
   <!-- MAIN -->
   <main class="main">
 
+  <?php if ($portal['sinAlumnoVinculado']): ?>
+    <section class="view active" id="view-resumen">
+      <div class="dash-greeting">Hola, <?= e($nombre) ?></div>
+      <div class="dash-sub">Todavía no hay ningún alumno vinculado a tu cuenta.</div>
+      <div class="card" style="margin-top:16px;">
+        <div class="section-title">Sin alumnos vinculados</div>
+        <p style="color:var(--gray-500);font-size:14px;">Cuando la institución apruebe una vinculación entre tu cuenta y un alumno, vas a poder ver acá su asistencia, materias y horarios.</p>
+      </div>
+    </section>
+  <?php else:
+    $alumno = $portal['alumno'];
+    $curso = $portal['curso'];
+    $nombreAlumno = trim($alumno['nombre'] . ' ' . $alumno['apellido']);
+    $cursoLabel = $curso ? ($curso['anio'] . '° Año – ' . $curso['especialidad_nombre']) : 'Sin curso asignado';
+    $pct = $portal['porcentajeAsistencia'];
+    $calificacionPct = $pct === null ? '' : ($pct >= 90 ? 'EXCELENTE' : ($pct >= 80 ? 'BUENA' : ($pct >= 70 ? 'REGULAR' : 'A MEJORAR')));
+  ?>
     <!-- ══════════ RESUMEN ══════════ -->
     <section class="view active" id="view-resumen">
-      <div class="dash-greeting">Buenos días, Familia Rossi</div>
-      <div class="dash-sub">Resumen de asistencia de su hijo</div>
+      <div class="dash-greeting">Buenos días, <?= e($nombre) ?></div>
+      <div class="dash-sub">Resumen de asistencia de <?= e($alumno['nombre']) ?></div>
 
       <!-- Alumno selector -->
-      <div class="alumno-selector" onclick="alert('Seleccionar otro alumno vinculado')">
+      <div class="alumno-selector" <?= count($portal['vinculados']) > 1 ? 'onclick="alert(\'Tenés ' . count($portal['vinculados']) . ' alumnos vinculados. El selector para cambiar entre ellos todavía no está disponible.\')"' : '' ?>>
         <div class="alumno-avatar">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <div class="dot"></div>
         </div>
         <div class="alumno-info">
-          <div class="alumno-name">Mateo García</div>
-          <div class="alumno-course">4to Año – Electronica</div>
+          <div class="alumno-name"><?= e($nombreAlumno) ?></div>
+          <div class="alumno-course"><?= e($cursoLabel) ?></div>
         </div>
+        <?php if (count($portal['vinculados']) > 1): ?>
         <div class="alumno-chevron">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
+        <?php endif; ?>
       </div>
 
       <!-- Asistencia card -->
@@ -120,8 +142,8 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
           Promedio de asistencias
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue-btn)" stroke-width="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
         </div>
-        <div class="asist-pct">94% <span>EXCELENTE</span></div>
-        <div class="progress-bar"><div class="progress-fill" style="width:94%"></div></div>
+        <div class="asist-pct"><?= $pct !== null ? e($pct) . '%' : '—' ?> <?php if ($calificacionPct): ?><span><?= e($calificacionPct) ?></span><?php endif; ?></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:<?= e($pct ?? 0) ?>%"></div></div>
       </div>
 
       <!-- Mini stats -->
@@ -131,7 +153,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
             Inasistencias
           </div>
-          <div class="mini-stat-num">02</div>
+          <div class="mini-stat-num"><?= e(str_pad((string) $portal['inasistencias'], 2, '0', STR_PAD_LEFT)) ?></div>
           <div class="mini-stat-sub">Ciclo lectivo</div>
         </div>
         <div class="mini-stat-card">
@@ -139,33 +161,31 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Llegadas tarde
           </div>
-          <div class="mini-stat-num">03</div>
+          <div class="mini-stat-num"><?= e(str_pad((string) $portal['llegadasTarde'], 2, '0', STR_PAD_LEFT)) ?></div>
           <div class="mini-stat-sub">Acumuladas</div>
         </div>
       </div>
 
       <!-- Aviso importante -->
+      <?php if ($portal['avisoImportante']): $aviso = $portal['avisoImportante']; ?>
       <div class="aviso-imp">
         <div class="aviso-imp-eyebrow">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Aviso Importante
         </div>
-        <div class="aviso-imp-title">Reunión de Padres</div>
-        <div class="aviso-imp-body">Se convoca a una reunión presencial para tratar el rendimiento académico del segundo trimestre.</div>
+        <div class="aviso-imp-title"><?= e($aviso['titulo']) ?></div>
+        <div class="aviso-imp-body"><?= e($aviso['contenido']) ?></div>
         <div class="aviso-imp-footer">
           <span>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            15 OCT
-          </span>
-          <span>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            18:00 HS
+            <?= e(mb_strtoupper(format_date_short_argentina($aviso['created_at']))) ?>
           </span>
         </div>
         <div class="aviso-imp-icon">
           <svg width="80" height="80" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M11 5.882V19.24a1.76 1.76 0 0 1-3.417.592l-2.147-6.15M18 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-7-1a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/></svg>
         </div>
       </div>
+      <?php endif; ?>
 
       <!-- Registros recientes -->
       <div class="card">
@@ -173,36 +193,30 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
           Registros Recientes
           <span class="action-link" onclick="showView('registro')">Ver todo</span>
         </div>
-        <div class="registro-item">
-          <div class="registro-icon reg-icon-green">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        <?php if (empty($portal['registrosRecientes'])): ?>
+          <div style="padding:16px 0;color:var(--gray-400);font-size:13px;">Sin registros de asistencia todavía.</div>
+        <?php else: foreach ($portal['registrosRecientes'] as $r):
+            $estilos = [
+              'presente' => ['icono' => 'reg-icon-green', 'stroke' => 'var(--green)', 'titulo' => 'Presente', 'badge' => 'badge-green', 'texto' => 'A TIEMPO'],
+              'tarde' => ['icono' => 'reg-icon-yellow', 'stroke' => 'var(--yellow)', 'titulo' => 'Llegada Tarde', 'badge' => 'badge-yellow', 'texto' => 'TARDE'],
+              'ausente' => ['icono' => 'reg-icon-yellow', 'stroke' => 'var(--red)', 'titulo' => 'Ausente', 'badge' => 'badge-red', 'texto' => 'AUSENTE'],
+            ][$r['estadoDia']];
+        ?>
+          <div class="registro-item">
+            <div class="registro-icon <?= e($estilos['icono']) ?>">
+              <?php if ($r['estadoDia'] === 'ausente'): ?>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="<?= $estilos['stroke'] ?>" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+              <?php else: ?>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="<?= $estilos['stroke'] ?>" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <?php endif; ?>
+            </div>
+            <div class="registro-info">
+              <div class="registro-title"><?= e($estilos['titulo']) ?></div>
+              <div class="registro-time"><?= e(format_date_short_argentina($r['fecha'])) ?><?= $r['hora_llegada'] ? ', ' . e(date('H:i', strtotime($r['hora_llegada']))) . ' hs' : '' ?></div>
+            </div>
+            <span class="badge <?= e($estilos['badge']) ?>"><?= e($estilos['texto']) ?></span>
           </div>
-          <div class="registro-info">
-            <div class="registro-title">Presente</div>
-            <div class="registro-time">Hoy, 07:30 hs</div>
-          </div>
-          <span class="badge badge-green">A TIEMPO</span>
-        </div>
-        <div class="registro-item">
-          <div class="registro-icon reg-icon-yellow">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          </div>
-          <div class="registro-info">
-            <div class="registro-title">Llegada Tarde</div>
-            <div class="registro-time">Ayer, 07:45 hs</div>
-          </div>
-          <span class="badge badge-yellow">15 MIN</span>
-        </div>
-        <div class="registro-item">
-          <div class="registro-icon reg-icon-green">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <div class="registro-info">
-            <div class="registro-title">Presente</div>
-            <div class="registro-time">02 Oct, 07:28 hs</div>
-          </div>
-          <span class="badge badge-green">A TIEMPO</span>
-        </div>
+        <?php endforeach; endif; ?>
       </div>
     </section>
 
@@ -213,17 +227,14 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
       <div class="page-subtitle">Historial detallado por día.</div>
 
       <!-- Alumno -->
-      <div class="alumno-selector" style="margin-bottom:18px;" onclick="alert('Cambiar alumno')">
+      <div class="alumno-selector" style="margin-bottom:18px;">
         <div class="alumno-avatar">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <div class="dot"></div>
         </div>
         <div class="alumno-info">
-          <div class="alumno-name">Mateo García</div>
-          <div class="alumno-course">4to Año – Electronica</div>
-        </div>
-        <div class="alumno-chevron">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          <div class="alumno-name"><?= e($nombreAlumno) ?></div>
+          <div class="alumno-course"><?= e($cursoLabel) ?></div>
         </div>
       </div>
 
@@ -231,15 +242,15 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
       <div class="grid-3" style="margin-bottom:18px;">
         <div class="card" style="padding:14px;text-align:center;">
           <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Asistencia</div>
-          <div style="font-size:22px;font-weight:800;color:var(--gray-800);">85%</div>
+          <div style="font-size:22px;font-weight:800;color:var(--gray-800);"><?= $pct !== null ? e($pct) . '%' : '—' ?></div>
         </div>
         <div class="card" style="padding:14px;text-align:center;">
           <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Faltas</div>
-          <div style="font-size:22px;font-weight:800;color:var(--red);">4</div>
+          <div style="font-size:22px;font-weight:800;color:var(--red);"><?= e($portal['faltasTotales']) ?></div>
         </div>
         <div class="card" style="padding:14px;text-align:center;">
           <div style="font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Tardes</div>
-          <div style="font-size:22px;font-weight:800;color:var(--blue-btn);">2</div>
+          <div style="font-size:22px;font-weight:800;color:var(--blue-btn);"><?= e($portal['llegadasTarde']) ?></div>
         </div>
       </div>
 
@@ -248,7 +259,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
         <button onclick="changeMonth(-1)">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <span class="month-label" id="month-label">Junio 2026</span>
+        <span class="month-label" id="month-label">—</span>
         <button onclick="changeMonth(1)">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
@@ -340,7 +351,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
           <div>
             <div class="profile-badge-label">Tutor Responsable</div>
             <div class="profile-name"><?php echo e($apellido . ', ' . $nombre); ?></div>
-            <div class="profile-dni">DNI: 28.455.912</div>
+            <div class="profile-dni">DNI: <?= e($usuario['dni'] ?? 'No informado') ?></div>
           </div>
         </div>
         <hr class="div">
@@ -350,7 +361,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
           </div>
           <div>
             <div class="profile-row-label">Correo Electrónico</div>
-            <div class="profile-row-val">r.garcia@gmail.com</div>
+            <div class="profile-row-val"><?= e($usuario['email'] ?? '—') ?></div>
           </div>
         </div>
         <div class="profile-row">
@@ -359,7 +370,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
           </div>
           <div>
             <div class="profile-row-label">Teléfono de Contacto</div>
-            <div class="profile-row-val">+54 9 11 4455-8899</div>
+            <div class="profile-row-val"><?= e($usuario['telefono'] ?? 'No informado') ?></div>
           </div>
         </div>
         <div class="profile-row">
@@ -368,11 +379,12 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
           </div>
           <div>
             <div class="profile-row-label">Domicilio Declarado</div>
-            <div class="profile-row-val">Av. San Martín 450, Florida Este</div>
+            <div class="profile-row-val"><?= e($usuario['domicilio'] ?? 'No informado') ?></div>
           </div>
         </div>
       </div>
 
+      <?php if (!$portal['sinAlumnoVinculado']): ?>
       <div class="card" style="margin-bottom:16px;">
         <div class="section-title" style="margin-bottom:14px;">Alumno Asociado</div>
         <div class="alumno-assoc-card">
@@ -380,10 +392,10 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           </div>
           <div style="flex:1;">
-            <div class="alumno-assoc-name">García, Lucas Matías</div>
-            <div class="alumno-assoc-course">6to 2da – Electronica</div>
+            <div class="alumno-assoc-name"><?= e($alumno['apellido'] . ', ' . $alumno['nombre']) ?></div>
+            <div class="alumno-assoc-course"><?= e($cursoLabel) ?></div>
           </div>
-          <span class="badge badge-navy">REGULAR</span>
+          <span class="badge badge-navy"><?= e(mb_strtoupper($alumno['matricula_estado'] ?? $alumno['estado'])) ?></span>
         </div>
         <div class="alumno-stats-row">
           <div class="alumno-stat-item">
@@ -392,7 +404,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
             </div>
             <div>
               <div class="alumno-stat-label">Asistencia</div>
-              <div class="alumno-stat-val">94%</div>
+              <div class="alumno-stat-val"><?= $pct !== null ? e($pct) . '%' : '—' ?></div>
             </div>
           </div>
           <div class="alumno-stat-item">
@@ -401,11 +413,12 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
             </div>
             <div>
               <div class="alumno-stat-label">Faltas Totales</div>
-              <div class="alumno-stat-val">8.50</div>
+              <div class="alumno-stat-val"><?= e($portal['faltasTotales']) ?></div>
             </div>
           </div>
         </div>
       </div>
+      <?php endif; ?>
 
       <form method="POST" action="index.php" style="width:100%;">
         <input type="hidden" name="action" value="logout">
@@ -415,6 +428,7 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
         </button>
       </form>
     </section>
+  <?php endif; ?>
 
   </main>
 </div>
@@ -439,6 +453,19 @@ $nombre_completo = trim($nombre . ' ' . $apellido);
   </button>
 </nav>
 
-<script src="../public/assets/js/padretutor.js"></script>
+<script>
+  // Datos reales inyectados por el servidor (ver PadreTutorController::portalData()),
+  // reemplazan los mocks hardcodeados que tenía padretutor.js.
+  window.SERVER_DATA = <?php
+    echo json_encode([
+      'porMes' => $portal['sinAlumnoVinculado'] ? [] : $portal['porMes'],
+      'anioInicial' => $portal['sinAlumnoVinculado'] ? (int) date('Y') : $portal['anioInicial'],
+      'mesInicial' => $portal['sinAlumnoVinculado'] ? (int) date('n') : $portal['mesInicial'],
+      'msgs' => $portal['msgs'],
+      'csrfToken' => csrf_token(),
+    ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+  ?>;
+</script>
+<script src="../public/assets/js/padretutor.js?v=2"></script>
 
 </div>

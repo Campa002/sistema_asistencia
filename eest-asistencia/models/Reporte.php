@@ -26,8 +26,13 @@ class Reporte {
                     pre.nombre as preceptor_nombre,
                     pre.apellido as preceptor_apellido,
                     det.estado,
+                    det.hora_llegada,
+                    det.hora_retiro,
                     reg.estado as registro_estado,
                     det.observaciones as detalle_observaciones,
+                    j.estado as justificacion_estado,
+                    j.tipo as justificacion_tipo,
+                    j.motivo as justificacion_motivo,
                     res.faltas_total
                 FROM detalles_asistencia det
                 JOIN registros_asistencia reg ON det.registro_id = reg.id
@@ -36,13 +41,14 @@ class Reporte {
                 JOIN materias mat ON reg.materia_id = mat.id
                 JOIN usuarios pre ON reg.preceptor_id = pre.id
                 LEFT JOIN especialidades esp ON cur.especialidad_id = esp.id
+                LEFT JOIN justificaciones j ON j.detalle_id = det.id
                 LEFT JOIN (
                     SELECT alumno_id, curso_id, fecha, turno, faltas_total
                     FROM resumen_asistencia_diaria
                     GROUP BY alumno_id, curso_id, fecha, turno
-                ) res ON res.alumno_id = alu.id 
-                    AND res.curso_id = cur.id 
-                    AND res.fecha = reg.fecha 
+                ) res ON res.alumno_id = alu.id
+                    AND res.curso_id = cur.id
+                    AND res.fecha = reg.fecha
                     AND res.turno = reg.turno
                 WHERE 1=1";
 
@@ -106,7 +112,11 @@ class Reporte {
         $params = [];
         $total_params = [];
 
-        // Build base queries
+        // Build base queries. Las faltas NO se traen acá: se calculan aparte
+        // (ver self::getFaltasPorAlumno) para evitar inflarlas cuando un
+        // alumno tiene más de un detalle (materia/bloque) el mismo día+turno
+        // — el join directo a resumen_asistencia_diaria duplicaría esa fila
+        // una vez por cada detalle de ese día, multiplicando el SUM.
         $sql = "SELECT alu.id as alumno_id,
                     alu.nombre,
                     alu.apellido,
@@ -120,21 +130,12 @@ class Reporte {
                     SUM(CASE WHEN det.estado = 'ausente_con_presente' THEN 1 ELSE 0 END) as ausentes_con_presente,
                     SUM(CASE WHEN det.estado = 'justificado' THEN 1 ELSE 0 END) as justificados,
                     SUM(CASE WHEN det.estado = 'retirado_anticipado' THEN 1 ELSE 0 END) as retiros_anticipados,
-                    SUM(res.faltas_total) as faltas_total,
                     COUNT(DISTINCT CONCAT(reg.fecha, reg.turno)) as dias_total
                 FROM detalles_asistencia det
                 JOIN registros_asistencia reg ON det.registro_id = reg.id
                 JOIN usuarios alu ON det.alumno_id = alu.id
                 JOIN cursos cur ON reg.curso_id = cur.id
                 LEFT JOIN especialidades esp ON cur.especialidad_id = esp.id
-                LEFT JOIN (
-                    SELECT alumno_id, curso_id, fecha, turno, MAX(faltas_total) as faltas_total
-                    FROM resumen_asistencia_diaria
-                    GROUP BY alumno_id, curso_id, fecha, turno
-                ) res ON res.alumno_id = alu.id 
-                    AND res.curso_id = cur.id 
-                    AND res.fecha = reg.fecha 
-                    AND res.turno = reg.turno
                 WHERE 1=1";
 
         $total_sql = "SELECT COUNT(DISTINCT alu.id) as total FROM detalles_asistencia det
@@ -142,14 +143,6 @@ class Reporte {
                 JOIN usuarios alu ON det.alumno_id = alu.id
                 JOIN cursos cur ON reg.curso_id = cur.id
                 LEFT JOIN especialidades esp ON cur.especialidad_id = esp.id
-                LEFT JOIN (
-                    SELECT alumno_id, curso_id, fecha, turno, MAX(faltas_total) as faltas_total
-                    FROM resumen_asistencia_diaria
-                    GROUP BY alumno_id, curso_id, fecha, turno
-                ) res ON res.alumno_id = alu.id 
-                    AND res.curso_id = cur.id 
-                    AND res.fecha = reg.fecha 
-                    AND res.turno = reg.turno
                 WHERE 1=1";
 
         // Apply filters to both queries
@@ -158,55 +151,61 @@ class Reporte {
 
         // Group and order
         $sql .= " GROUP BY alu.id, alu.nombre, alu.apellido, cur.anio, cur.division, esp.nombre, cur.turno";
-        switch ($ordenamiento) {
-            case 'faltas_desc':
-                $sql .= " ORDER BY faltas_total DESC";
-                break;
-            case 'alumno_asc':
-            default:
-                $sql .= " ORDER BY alu.apellido ASC, alu.nombre ASC";
+        if ($ordenamiento === 'alumno_asc' || $ordenamiento !== 'faltas_desc') {
+            $sql .= " ORDER BY alu.apellido ASC, alu.nombre ASC";
         }
+        // 'faltas_desc' se ordena en PHP más abajo, porque faltas_total ya no
+        // es una columna de esta consulta (ver nota arriba).
 
-        // Get total first
-        $total_stmt = $db->prepare($total_sql);
-        $total_stmt->execute($total_params);
-        $total = intval($total_stmt->fetch(PDO::FETCH_ASSOC)['total']);
+        // Los filtros de rango de faltas/asistencia, y el ordenamiento por
+        // faltas, dependen de un valor (faltas_total) que se calcula en PHP
+        // después de fusionar la consulta de faltas real — por lo que en
+        // esos casos hace falta traer TODOS los alumnos que cumplen el resto
+        // de los filtros y recién ahí paginar en PHP. En el caso simple se
+        // pagina directamente en SQL (más eficiente) y el total real sale de
+        // $total_sql.
+        $requierePosprocesoPHP = !empty($filters['rango_faltas']) || !empty($filters['rango_asistencia']) || $ordenamiento === 'faltas_desc';
 
-        // Add pagination to main query
-        if ($per_page !== 'all') {
-            $offset = ($page_num - 1) * $per_page;
-            $sql .= " LIMIT ? OFFSET ?";
-            $params[] = $per_page;
-            $params[] = $offset;
-        }
+        if ($requierePosprocesoPHP) {
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $alumnos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        $stmt = $db->prepare($sql);
-        $stmt->execute($params);
-        $alumnos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            self::mergeFaltasPorAlumno($alumnos, $filters);
 
-        // Calcular porcentaje de asistencia
-        foreach ($alumnos as &$alumno) {
-            $dias_total = $alumno['dias_total'];
-            $faltas_total = $alumno['faltas_total'];
-            if ($dias_total > 0) {
-                $asistencias = max($dias_total - $faltas_total, 0);
-                $alumno['porcentaje_asistencia'] = round(($asistencias / $dias_total) * 100, 2);
-            } else {
-                $alumno['porcentaje_asistencia'] = 0;
+            if ($ordenamiento === 'faltas_desc') {
+                usort($alumnos, fn($a, $b) => $b['faltas_total'] <=> $a['faltas_total']);
             }
-        }
-        unset($alumno);
 
-        // Aplicar filtros de rango de faltas y asistencia
-        $alumnos = self::filtrarAlumnosPorRangos($alumnos, $filters);
+            $alumnos = array_values(self::filtrarAlumnosPorRangos($alumnos, $filters));
 
-        $total_pages = $per_page !== 'all' ? ceil(count($alumnos) / $per_page) : 1;
-        $total = count($alumnos);
+            $total = count($alumnos);
+            $total_pages = $per_page !== 'all' ? max(1, (int) ceil($total / $per_page)) : 1;
 
-        // Aplicar paginación después de filtrar
-        if ($per_page !== 'all') {
-            $offset = ($page_num - 1) * $per_page;
-            $alumnos = array_slice($alumnos, $offset, $per_page);
+            if ($per_page !== 'all') {
+                $offset = ($page_num - 1) * $per_page;
+                $alumnos = array_slice($alumnos, $offset, $per_page);
+            }
+        } else {
+            // Total real (sin recortar) desde la query de conteo dedicada
+            $total_stmt = $db->prepare($total_sql);
+            $total_stmt->execute($total_params);
+            $total = intval($total_stmt->fetch(PDO::FETCH_ASSOC)['total']);
+
+            if ($per_page !== 'all') {
+                $offset = ($page_num - 1) * $per_page;
+                $sql .= " LIMIT ? OFFSET ?";
+                $params[] = $per_page;
+                $params[] = $offset;
+            }
+
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $alumnos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            self::mergeFaltasPorAlumno($alumnos, $filters);
+
+            $total_pages = $per_page !== 'all' ? max(1, (int) ceil($total / $per_page)) : 1;
         }
 
         return [
@@ -216,6 +215,68 @@ class Reporte {
             'per_page' => $per_page,
             'total_pages' => $total_pages
         ];
+    }
+
+    /**
+     * Calcula faltas_total real por alumno (sin fan-out) y calcula, en el
+     * mismo paso, el porcentaje de asistencia. Modifica $alumnos por
+     * referencia agregando 'faltas_total' y 'porcentaje_asistencia'.
+     */
+    private static function mergeFaltasPorAlumno(array &$alumnos, array $filters): void {
+        $faltasPorAlumno = self::getFaltasPorAlumno($filters);
+
+        foreach ($alumnos as &$alumno) {
+            $faltas_total = $faltasPorAlumno[$alumno['alumno_id']] ?? 0.0;
+            $alumno['faltas_total'] = $faltas_total;
+
+            $dias_total = $alumno['dias_total'];
+            if ($dias_total > 0) {
+                $asistencias = max($dias_total - $faltas_total, 0);
+                $alumno['porcentaje_asistencia'] = round(($asistencias / $dias_total) * 100, 2);
+            } else {
+                $alumno['porcentaje_asistencia'] = 0;
+            }
+        }
+        unset($alumno);
+    }
+
+    /**
+     * Devuelve un mapa [alumno_id => faltas_total] calculado a partir de
+     * resumen_asistencia_diaria, deduplicando primero los pares
+     * (alumno, curso, fecha, turno) que cumplen los filtros — así una
+     * jornada con más de un detalle (una materia por bloque) no infla la
+     * falta de ese día al sumarla más de una vez.
+     */
+    private static function getFaltasPorAlumno(array $filters): array {
+        $db = Database::getConnection();
+        $params = [];
+
+        $sql = "SELECT dias.alumno_id, COALESCE(SUM(res.faltas_total), 0) as faltas_total
+                FROM (
+                    SELECT DISTINCT det.alumno_id, reg.curso_id, reg.fecha, reg.turno
+                    FROM detalles_asistencia det
+                    JOIN registros_asistencia reg ON det.registro_id = reg.id
+                    JOIN usuarios alu ON det.alumno_id = alu.id
+                    JOIN cursos cur ON reg.curso_id = cur.id
+                    WHERE 1=1";
+        $sql = self::aplicarFiltrosComunes($sql, $filters, $params, false);
+        $sql .= "
+                ) dias
+                LEFT JOIN resumen_asistencia_diaria res
+                    ON res.alumno_id = dias.alumno_id
+                    AND res.curso_id = dias.curso_id
+                    AND res.fecha = dias.fecha
+                    AND res.turno = dias.turno
+                GROUP BY dias.alumno_id";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+
+        $mapa = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $fila) {
+            $mapa[$fila['alumno_id']] = (float) $fila['faltas_total'];
+        }
+        return $mapa;
     }
 
     private static function filtrarAlumnosPorRangos($alumnos, $filters) {
@@ -335,26 +396,19 @@ class Reporte {
         $db = Database::getConnection();
         $params = [];
 
-        $sql = "SELECT 
+        // faltas_total NO se trae acá: se calcula aparte con self::getFaltasTotalPoblacion()
+        // para no inflarla cuando un alumno tiene más de un detalle el mismo día+turno.
+        $sql = "SELECT
                     COUNT(DISTINCT det.id) as registros,
                     COUNT(DISTINCT det.alumno_id) as alumnos,
                     SUM(CASE WHEN det.estado = 'presente' THEN 1 ELSE 0 END) as presentes,
                     SUM(CASE WHEN det.estado = 'ausente' THEN 1 ELSE 0 END) as ausentes,
                     SUM(CASE WHEN det.estado = 'llegada_tarde' THEN 1 ELSE 0 END) as llegadas_tarde,
-                    SUM(CASE WHEN det.estado = 'retirado_anticipado' THEN 1 ELSE 0 END) as retiros_anticipados,
-                    SUM(COALESCE(res.faltas_total, 0)) as faltas_total
+                    SUM(CASE WHEN det.estado = 'retirado_anticipado' THEN 1 ELSE 0 END) as retiros_anticipados
                 FROM detalles_asistencia det
                 JOIN registros_asistencia reg ON det.registro_id = reg.id
                 JOIN usuarios alu ON det.alumno_id = alu.id
                 JOIN cursos cur ON reg.curso_id = cur.id
-                LEFT JOIN (
-                    SELECT alumno_id, curso_id, fecha, turno, MAX(faltas_total) as faltas_total
-                    FROM resumen_asistencia_diaria
-                    GROUP BY alumno_id, curso_id, fecha, turno
-                ) res ON res.alumno_id = det.alumno_id 
-                    AND res.curso_id = cur.id 
-                    AND res.fecha = reg.fecha 
-                    AND res.turno = reg.turno
                 WHERE 1=1";
 
         $sql = self::aplicarFiltrosComunes($sql, $filters, $params, false);
@@ -362,6 +416,7 @@ class Reporte {
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
         $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stats['faltas_total'] = self::getFaltasTotalPoblacion($filters);
 
         return $stats;
     }
@@ -452,69 +507,33 @@ class Reporte {
     public static function getReportStats($filters = []) {
         $db = Database::getConnection();
         $params = [];
-        $where = ["reg.estado != 'anulada'"];
 
-        if (!empty($filters['fecha_desde'])) {
-            $where[] = "reg.fecha >= ?";
-            $params[] = $filters['fecha_desde'];
-        }
-        if (!empty($filters['fecha_hasta'])) {
-            $where[] = "reg.fecha <= ?";
-            $params[] = $filters['fecha_hasta'];
-        }
-        if (!empty($filters['curso_id'])) {
-            $where[] = "reg.curso_id = ?";
-            $params[] = $filters['curso_id'];
-        }
-        if (!empty($filters['turno'])) {
-            $where[] = "reg.turno = ?";
-            $params[] = $filters['turno'];
-        }
-        if (!empty($filters['especialidad_id'])) {
-            $where[] = "cur.especialidad_id = ?";
-            $params[] = $filters['especialidad_id'];
-        }
-        if (!empty($filters['materia_id'])) {
-            $where[] = "reg.materia_id = ?";
-            $params[] = $filters['materia_id'];
-        }
-        if (!empty($filters['preceptor_id'])) {
-            $where[] = "reg.preceptor_id = ?";
-            $params[] = $filters['preceptor_id'];
-        }
-        if (!empty($filters['tipo_registro'])) {
-            $where[] = "det.estado = ?";
-            $params[] = $filters['tipo_registro'];
-        }
-        if (!empty($filters['alumno_id'])) {
-            $where[] = "det.alumno_id = ?";
-            $params[] = $filters['alumno_id'];
-        }
-
-        $whereClause = implode(' AND ', $where);
-
-        $sql = "SELECT 
+        // faltas_total NO se trae acá: se calcula aparte con self::getFaltasTotalPoblacion()
+        // para no inflarla cuando un alumno tiene más de un detalle el mismo día+turno
+        // (ver nota en getResumenPorAlumno/getFaltasPorAlumno).
+        // Usa aplicarFiltrosComunes() (los mismos filtros que el resto de Reportes,
+        // incluida división, bloque horario e "incluir anuladas") para que las
+        // KPI cards y la tabla de resultados respondan siempre a la misma población.
+        $sql = "SELECT
                     COUNT(DISTINCT det.id) as registros,
-                    SUM(CASE WHEN det.estado = 'llegada_tarde' THEN 1 ELSE 0 END) as llegadas_tarde,
+                    COALESCE(SUM(CASE WHEN det.estado = 'llegada_tarde' THEN 1 ELSE 0 END), 0) as llegadas_tarde,
                     COUNT(DISTINCT j.id) as justificaciones_total,
-                    SUM(CASE WHEN det.estado = 'retirado_anticipado' THEN 1 ELSE 0 END) as retiros_anticipados,
-                    SUM(CASE WHEN det.estado = 'ausente' THEN 1 ELSE 0 END) as ausentes,
-                    COUNT(DISTINCT CONCAT(reg.fecha, reg.turno, det.alumno_id)) as jornadas_computables,
-                    SUM(COALESCE(res.faltas_total, 0)) as faltas_total
+                    COALESCE(SUM(CASE WHEN det.estado = 'retirado_anticipado' THEN 1 ELSE 0 END), 0) as retiros_anticipados,
+                    COALESCE(SUM(CASE WHEN det.estado = 'ausente' THEN 1 ELSE 0 END), 0) as ausentes,
+                    COUNT(DISTINCT CONCAT(reg.fecha, reg.turno, det.alumno_id)) as jornadas_computables
                 FROM detalles_asistencia det
                 JOIN registros_asistencia reg ON det.registro_id = reg.id
+                JOIN usuarios alu ON det.alumno_id = alu.id
                 JOIN cursos cur ON reg.curso_id = cur.id
-                LEFT JOIN justificaciones j ON j.alumno_id = det.alumno_id
-                LEFT JOIN (
-                    SELECT alumno_id, curso_id, fecha, turno, MAX(faltas_total) as faltas_total
-                    FROM resumen_asistencia_diaria
-                    GROUP BY alumno_id, curso_id, fecha, turno
-                ) res ON res.alumno_id = det.alumno_id AND res.curso_id = cur.id AND res.fecha = reg.fecha AND res.turno = reg.turno
-                WHERE $whereClause";
+                LEFT JOIN justificaciones j ON j.detalle_id = det.id
+                WHERE 1=1";
+        $sql = self::aplicarFiltrosComunes($sql, $filters, $params, false);
 
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
         $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        $faltas_total = self::getFaltasTotalPoblacion($filters);
 
         $asistencia_general = 0;
         if ($stats['jornadas_computables'] > 0) {
@@ -526,8 +545,40 @@ class Reporte {
             'llegadas_tarde' => $stats['llegadas_tarde'],
             'justificaciones_total' => $stats['justificaciones_total'],
             'retiros_anticipados' => $stats['retiros_anticipados'],
-            'faltas_total' => $stats['faltas_total']
+            'faltas_total' => $faltas_total
         ];
+    }
+
+    /**
+     * Suma total de faltas (resumen_asistencia_diaria) para toda la
+     * población filtrada, deduplicando primero los pares
+     * (alumno, curso, fecha, turno) — mismo criterio que getFaltasPorAlumno,
+     * pero sin agrupar por alumno (para las KPI cards de Reportes).
+     */
+    private static function getFaltasTotalPoblacion(array $filters): float {
+        $db = Database::getConnection();
+        $params = [];
+
+        $sql = "SELECT COALESCE(SUM(res.faltas_total), 0) as faltas_total
+                FROM (
+                    SELECT DISTINCT det.alumno_id, reg.curso_id, reg.fecha, reg.turno
+                    FROM detalles_asistencia det
+                    JOIN registros_asistencia reg ON det.registro_id = reg.id
+                    JOIN usuarios alu ON det.alumno_id = alu.id
+                    JOIN cursos cur ON reg.curso_id = cur.id
+                    WHERE 1=1";
+        $sql = self::aplicarFiltrosComunes($sql, $filters, $params, false);
+        $sql .= "
+                ) dias
+                LEFT JOIN resumen_asistencia_diaria res
+                    ON res.alumno_id = dias.alumno_id
+                    AND res.curso_id = dias.curso_id
+                    AND res.fecha = dias.fecha
+                    AND res.turno = dias.turno";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        return (float) $stmt->fetch(PDO::FETCH_ASSOC)['faltas_total'];
     }
 
     public static function getPresentismoPorDivision($filters = [], $anio_grafico = '') {
@@ -690,5 +741,19 @@ class Reporte {
             'mayor_ausentismo' => $mayor_ausentismo,
             'mejor_asistencia' => $mejor_asistencia
         ];
+    }
+
+    /**
+     * Total de faltas acumuladas de UN alumno, sin filtro de fecha (todo el
+     * histórico en resumen_asistencia_diaria). Es una simple SUMA sobre esa
+     * tabla — no hay riesgo de fan-out porque ya tiene una sola fila por
+     * (alumno, curso, fecha, turno). Usado para el límite institucional de
+     * faltas (Gestión Técnica); no modifica ninguna consulta existente.
+     */
+    public static function getFaltasTotalAlumno(int $alumnoId): float {
+        $db = Database::getConnection();
+        $stmt = $db->prepare("SELECT COALESCE(SUM(faltas_total), 0) as total FROM resumen_asistencia_diaria WHERE alumno_id = ?");
+        $stmt->execute([$alumnoId]);
+        return (float) $stmt->fetch(PDO::FETCH_ASSOC)['total'];
     }
 }

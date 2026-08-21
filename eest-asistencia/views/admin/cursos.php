@@ -227,6 +227,7 @@ $alumnosCurso = $data['alumnosCurso'];
                                             </button>
                                             <form method="POST" action="index.php" style="display: inline;">
                                                 <input type="hidden" name="action" value="admin_toggle_estado_curso">
+                                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                                                 <input type="hidden" name="id" value="<?= e($curso['id']) ?>">
                                                 <label class="toggle-switch" style="display: inline-flex; cursor: pointer;">
                                                     <input type="checkbox" onchange="this.form.submit()" <?= $curso['estado'] === 'activo' ? 'checked' : '' ?>>
@@ -256,6 +257,7 @@ $alumnosCurso = $data['alumnosCurso'];
             </div>
             <form method="POST" action="index.php">
                 <input type="hidden" name="action" value="admin_create_curso">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                     <div>
                         <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #071D3A;">Año</label>
@@ -347,6 +349,7 @@ $alumnosCurso = $data['alumnosCurso'];
             </div>
             <form id="editForm" method="POST" action="index.php">
                 <input type="hidden" name="action" value="admin_update_curso">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="id" id="edit_id">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                     <div>

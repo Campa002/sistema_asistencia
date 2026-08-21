@@ -4,6 +4,7 @@ require_once __DIR__ . '/../models/Asistencia.php';
 require_once __DIR__ . '/../models/Curso.php';
 require_once __DIR__ . '/../models/Usuario.php';
 require_once __DIR__ . '/../models/Materia.php';
+require_once __DIR__ . '/../models/LogActividad.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/helpers.php';
 
@@ -92,7 +93,13 @@ class AdminAsistenciasController {
             }
         }
         $queryString = !empty($queryParams) ? '&' . http_build_query($queryParams) : '';
-        
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            flash('errors', ['Token de seguridad inválido. Recargue la página e intente nuevamente.']);
+            redirect('index.php?page=admin/asistencias' . $queryString);
+            return;
+        }
+
         switch ($action) {
             case 'editar_asistencia':
                 $registroId = intval(input('registro_id', 0));
@@ -108,18 +115,40 @@ class AdminAsistenciasController {
                 $observaciones = input('observaciones_auditoria', '');
                 
                 if (Asistencia::updateRegistro($registroId, $data, $adminId, $observaciones)) {
+                    // auditoria_asistencias ya guarda el detalle campo por
+                    // campo (Asistencia::registrarAuditoria); acá solo se dej
+                    // a un puntero liviano para que aparezca en Actividad
+                    // Reciente, sin duplicar datos de alumnos.
+                    LogActividad::registrar(
+                        $adminId,
+                        'EDITAR_ASISTENCIA',
+                        "Editó el registro de asistencia #$registroId (curso {$data['curso_id']}, fecha {$data['fecha']})",
+                        'registros_asistencia',
+                        $registroId,
+                        null,
+                        null
+                    );
                     flash('success', 'Asistencia actualizada correctamente');
                 } else {
                     flash('error', 'Error al actualizar la asistencia');
                 }
                 redirect('index.php?page=admin/asistencias&registro_id=' . $registroId . $queryString);
                 break;
-            
+
             case 'anular_asistencia':
                 $registroId = intval(input('registro_id', 0));
                 $observaciones = input('observaciones', '');
-                
+
                 if (Asistencia::anularRegistro($registroId, $adminId, $observaciones)) {
+                    LogActividad::registrar(
+                        $adminId,
+                        'ANULAR_ASISTENCIA',
+                        "Anuló el registro de asistencia #$registroId",
+                        'registros_asistencia',
+                        $registroId,
+                        null,
+                        null
+                    );
                     flash('success', 'Asistencia anulada correctamente');
                 } else {
                     flash('error', 'Error al anular la asistencia');
