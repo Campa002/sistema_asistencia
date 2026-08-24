@@ -10,20 +10,6 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
 $page = input('page', 'home');
 $GLOBALS['page'] = $page;
 
-// DEBUG TEMPORAL - borrar después
-if (isset($_GET['debug'])) {
-    echo '<pre>';
-    echo 'SESSION: ';
-    print_r($_SESSION);
-    echo 'PAGE: ' . $page . "\n";
-    echo 'IS_LOGGED_IN: ' . (is_logged_in() ? 'SI' : 'NO') . "\n";
-    echo 'ROL: ' . ($_SESSION['rol'] ?? 'NO HAY ROL') . "\n";
-    echo 'USUARIO_ID: ' . ($_SESSION['usuario_id'] ?? 'NO HAY ID') . "\n";
-    echo 'BASE_URL: ' . BASE_URL . "\n";
-    echo '</pre>';
-    die();
-}
-
 // Rutas públicas: NO requieren sesión
 $public_routes = ['home', 'login', 'register_alumno', 'primer_acceso', 'unauthorized'];
 
@@ -154,6 +140,12 @@ if ($page === 'directivo/cancelar_reemplazo_ajax' && is_post()) {
 if ($page === 'directivo/marcar_realizado_reemplazo_ajax' && is_post()) {
     require_once __DIR__ . '/../controllers/DirectivoController.php';
     DirectivoController::marcarRealizadoReemplazoAjax();
+    exit;
+}
+
+if ($page === 'directivo/filtrar_asistencia_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::filtrarAsistenciaAjax();
     exit;
 }
 

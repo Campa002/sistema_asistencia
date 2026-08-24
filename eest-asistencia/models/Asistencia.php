@@ -115,6 +115,16 @@ class Asistencia {
             $params[] = $filters['curso_id'];
         }
 
+        if (!empty($filters['anio'])) {
+            $sql .= " AND c.anio = ?";
+            $params[] = $filters['anio'];
+        }
+
+        if (!empty($filters['division'])) {
+            $sql .= " AND c.division = ?";
+            $params[] = $filters['division'];
+        }
+
         if (!empty($filters['turno'])) {
             $sql .= " AND ra.turno = ?";
             $params[] = self::normalizeTurno($filters['turno']);

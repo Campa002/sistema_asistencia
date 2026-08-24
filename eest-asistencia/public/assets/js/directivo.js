@@ -588,6 +588,42 @@ function cancelarReemplazo(reemplazoId) {
     });
 }
 
+// ─── FILTRO DE REEMPLAZOS POR TURNO (cliente, sobre filas ya renderizadas) ───
+function filtrarReemplazosPorTurno(selectEl) {
+  var turno = (selectEl.value || '').toLowerCase();
+  var filas = document.querySelectorAll('#seccion-reemplazos tbody tr[data-turno]');
+  filas.forEach(function (fila) {
+    var mostrar = !turno || (fila.getAttribute('data-turno') || '').toLowerCase() === turno;
+    fila.style.display = mostrar ? '' : 'none';
+  });
+}
+
+// ─── FILTRO DE ASISTENCIA INSTITUCIONAL (real, vía AJAX) ───
+function actualizarAsistenciaInstitucional() {
+  var anio = document.getElementById('filtro-asistencia-anio').value;
+  var division = document.getElementById('filtro-asistencia-division').value;
+  var fecha = document.getElementById('filtro-asistencia-fecha').value;
+  var body = new URLSearchParams({ anio: anio, division: division, fecha: fecha, csrf_token: SD.csrfToken });
+
+  fetch('index.php?page=directivo/filtrar_asistencia_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        showToast(data.error || 'No se pudo actualizar la asistencia institucional.', 'error');
+        return;
+      }
+      document.getElementById('asistencia-institucional-tbody').innerHTML = data.html;
+      showToast('Asistencia institucional actualizada (' + data.total + ' registros).', 'success');
+    })
+    .catch(function () {
+      showToast('No se pudo actualizar. Verificá tu conexión.', 'error');
+    });
+}
+
 // ─── NUEVO REEMPLAZO (crear real) ───
 function abrirModalNuevoReemplazo() {
   var fecha = document.getElementById('nr-fecha');

@@ -28,6 +28,12 @@ $css_path = url('assets/css/styles.css');
             text-align: left;
         }
     </style>
+
+    <!-- PWA -->
+    <link rel="manifest" href="<?= url('manifest.webmanifest') ?>">
+    <meta name="theme-color" content="#071D3A">
+    <link rel="icon" type="image/png" href="<?= url('assets/img/icons/icon-192.png') ?>">
+    <link rel="apple-touch-icon" href="<?= url('assets/img/icons/icon-192.png') ?>">
 </head>
 <body>
 <div class="auth-wrapper" style="padding: 40px 20px;">
@@ -138,5 +144,12 @@ $css_path = url('assets/css/styles.css');
         </div>
     </div>
 </div>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('<?= url('service-worker.js') ?>').catch(function () {});
+    });
+  }
+</script>
 </body>
 </html>

@@ -479,17 +479,12 @@ header('Pragma: no-cache');
 
       <div class="tarjeta-contenedor">
         <div class="barra-filtros">
-          <select class="filtro-select">
-            <option>Turno: Todos</option>
-            <option>Manana</option>
-            <option>Tarde</option>
-            <option>Vespertino</option>
+          <select class="filtro-select" id="filtro-reemplazos-turno" onchange="filtrarReemplazosPorTurno(this)">
+            <option value="">Turno: Todos</option>
+            <option value="mañana">Mañana</option>
+            <option value="tarde">Tarde</option>
+            <option value="vespertino">Vespertino</option>
           </select>
-          <div class="barra-filtros__acciones-derecha">
-            <button class="btn-accion" style="background:none; border:none; cursor:pointer;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--gris-texto)"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/></svg>
-            </button>
-          </div>
         </div>
 
         <div class="tabla-contenedor">
@@ -515,7 +510,7 @@ header('Pragma: no-cache');
                   $estadoClase = ['sin_asignar' => 'sin-asignar', 'asignado' => 'asignado', 'realizado' => 'completo', 'cancelado' => 'sin-asignar'][$r['estado']] ?? 'sin-asignar';
                   $estadoLabel = ['sin_asignar' => 'Sin Asignar', 'asignado' => 'Asignado', 'realizado' => 'Realizado', 'cancelado' => 'Cancelado'][$r['estado']] ?? ucfirst($r['estado']);
               ?>
-                <tr id="reemplazo-row-<?= (int) $r['id'] ?>">
+                <tr id="reemplazo-row-<?= (int) $r['id'] ?>" data-turno="<?= e($r['turno']) ?>">
                   <td>
                     <div style="display:flex; align-items:center; gap:10px;">
                       <div class="avatar-iniciales"><?= e($iniciales) ?></div>
@@ -607,23 +602,21 @@ header('Pragma: no-cache');
 
       <div class="tarjeta-contenedor">
         <div class="barra-filtros">
-          <select class="filtro-select">
-            <option>Todos los Cursos</option>
+          <select class="filtro-select" id="filtro-asistencia-anio">
+            <option value="">Todos los Cursos</option>
+            <?php foreach (array_unique(array_column($portal['cursosTodos'], 'anio')) as $anioOpt): ?>
+              <option value="<?= e($anioOpt) ?>"><?= e($anioOpt) ?>°</option>
+            <?php endforeach; ?>
           </select>
-          <select class="filtro-select">
-            <option>Todas las Divisiones</option>
+          <select class="filtro-select" id="filtro-asistencia-division">
+            <option value="">Todas las Divisiones</option>
+            <?php foreach (array_unique(array_column($portal['cursosTodos'], 'division')) as $divOpt): ?>
+              <option value="<?= e($divOpt) ?>"><?= e($divOpt) ?>°</option>
+            <?php endforeach; ?>
           </select>
-          <input type="date" class="filtro-select" placeholder="mm/dd/yyyy" style="padding-right: 12px; appearance: auto;">
-          <button class="boton-secundario" style="border-radius: 20px;">
-            <svg viewBox="0 0 24 24"><path d="M4.25 5.61C6.27 8.2 10 13 10 13v6c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-6s3.72-4.8 5.74-7.39C20.25 4.95 19.78 4 18.95 4H5.04c-.83 0-1.3.95-.79 1.61z"/></svg>
-            Mas Filtros
-          </button>
+          <input type="date" class="filtro-select" id="filtro-asistencia-fecha" style="padding-right: 12px; appearance: auto;">
           <div class="barra-filtros__acciones-derecha">
-            <button class="boton-secundario">
-              <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 7h14v2H5z"/></svg>
-              EXPORTAR
-            </button>
-            <button class="boton-primario">
+            <button class="boton-primario" onclick="actualizarAsistenciaInstitucional()">
               <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
               ACTUALIZAR
             </button>
@@ -642,41 +635,8 @@ header('Pragma: no-cache');
                 <th>ACCIONES</th>
               </tr>
             </thead>
-            <tbody>
-              <?php if (empty($portal['registrosAsistencia'])): ?>
-                <tr><td colspan="6" style="text-align:center;color:var(--gris-texto)">No hay registros de asistencia.</td></tr>
-              <?php else: foreach ($portal['registrosAsistencia'] as $item):
-                  $reg = $item['reg']; $conteo = $item['conteo'];
-                  $iniciales = mb_strtoupper(mb_substr($reg['preceptor_nombre'], 0, 1) . mb_substr($reg['preceptor_apellido'], 0, 1));
-                  $estadoClaseMap = ['cerrada' => 'completo', 'modificada' => 'en-proceso', 'abierta' => 'sin-asignar', 'anulada' => 'sin-asignar'];
-                  $estadoClase = $estadoClaseMap[$reg['estado_calculado']] ?? 'sin-asignar';
-              ?>
-                <tr>
-                  <td>
-                    <div><strong><?= e($reg['anio']) ?> <?= e($reg['division']) ?>°</strong></div>
-                    <div style="font-size:12px; color:var(--gris-texto);"><?= e($reg['materia_nombre']) ?></div>
-                  </td>
-                  <td>
-                    <div><?= e(format_date_short_argentina($reg['fecha'])) ?></div>
-                    <div style="font-size:12px; color:var(--gris-texto);"><?= $reg['hora_inicio'] ? e(substr($reg['hora_inicio'], 0, 5)) : '' ?></div>
-                  </td>
-                  <td>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <div class="avatar-iniciales"><?= e($iniciales) ?></div>
-                      <?= e($reg['preceptor_nombre'] . ' ' . $reg['preceptor_apellido']) ?>
-                    </div>
-                  </td>
-                  <td>
-                    <div class="pataj">
-                      <span><?= e($conteo['presente']) ?></span><span> / </span><span><?= e($conteo['ausente']) ?></span><span> / </span><span><?= e($conteo['llegada_tarde']) ?></span><span style="color:var(--gris-texto);"> / </span><span><?= e($conteo['justificado']) ?></span>
-                    </div>
-                  </td>
-                  <td><span class="indicador-estado indicador-estado--<?= e($estadoClase) ?>"><?= e(ucfirst($reg['estado_calculado'])) ?></span></td>
-                  <td>
-                    <button class="btn-accion btn-accion--ver"><svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></button>
-                  </td>
-                </tr>
-              <?php endforeach; endif; ?>
+            <tbody id="asistencia-institucional-tbody">
+              <?php $registrosAsistencia = $portal['registrosAsistencia']; require __DIR__ . '/_partial_asistencia_rows.php'; ?>
             </tbody>
           </table>
         </div>

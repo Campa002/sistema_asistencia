@@ -1,0 +1,6 @@
+# Tipo MIME correcto para el manifest de la PWA (Apache no lo reconoce por
+# defecto). Sin esto, algunos navegadores rechazan el manifest y la app deja
+# de ser instalable. No afecta ninguna otra ruta ni el ruteo por index.php.
+<IfModule mod_mime.c>
+    AddType application/manifest+json .webmanifest
+</IfModule>

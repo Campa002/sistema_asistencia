@@ -97,16 +97,7 @@ class DirectivoController {
         });
 
         // Asistencia institucional: registros recientes de todos los cursos
-        $resAsist = Asistencia::getAll([], 1, 20);
-        $registrosAsistencia = [];
-        foreach ($resAsist['registros'] as $reg) {
-            $detalles = Asistencia::getDetallesByRegistroId($reg['id']);
-            $conteo = ['presente' => 0, 'ausente' => 0, 'llegada_tarde' => 0, 'justificado' => 0];
-            foreach ($detalles as $d) {
-                if (isset($conteo[$d['estado']])) $conteo[$d['estado']]++;
-            }
-            $registrosAsistencia[] = ['reg' => $reg, 'conteo' => $conteo];
-        }
+        $registrosAsistencia = self::buildRegistrosAsistencia([]);
 
         // Notificaciones (todo tipo salvo comunicado, ya cubierto en Admin)
         $notificaciones = self::notificacionesPara($db, $directivoId, ['aviso', 'alerta', 'recordatorio'], 30);
@@ -877,5 +868,62 @@ class DirectivoController {
         }
 
         echo json_encode(['ok' => true]);
+    }
+
+    /**
+     * Arma la lista de registros de asistencia + conteo de estados para la
+     * sección "Asistencia Institucional". Reutilizado por portalData() (sin
+     * filtros) y por filtrarAsistenciaAjax() (con filtros reales) para no
+     * duplicar la lógica de conteo.
+     */
+    private static function buildRegistrosAsistencia(array $filtros): array {
+        $resAsist = Asistencia::getAll($filtros, 1, 20);
+        $registrosAsistencia = [];
+        foreach ($resAsist['registros'] as $reg) {
+            $detalles = Asistencia::getDetallesByRegistroId($reg['id']);
+            $conteo = ['presente' => 0, 'ausente' => 0, 'llegada_tarde' => 0, 'justificado' => 0];
+            foreach ($detalles as $d) {
+                if (isset($conteo[$d['estado']])) $conteo[$d['estado']]++;
+            }
+            $registrosAsistencia[] = ['reg' => $reg, 'conteo' => $conteo];
+        }
+        return $registrosAsistencia;
+    }
+
+    /**
+     * Filtra en vivo la tabla de "Asistencia Institucional" (curso/año,
+     * división, fecha) reutilizando Asistencia::getAll() — no duplica la
+     * lógica de armado de registros. Devuelve el HTML del <tbody> ya
+     * renderizado (mismo partial que usa el render inicial) para que el
+     * front no tenga que reimplementar el formateo.
+     */
+    public static function filtrarAsistenciaAjax(): void {
+        require_role('directivo');
+        header('Content-Type: application/json');
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido. Recargá la página e intentá de nuevo.']);
+            return;
+        }
+
+        $filtros = [];
+        $anio = input('anio', '');
+        $division = input('division', '');
+        $fecha = input('fecha', '');
+        if ($anio !== '') $filtros['anio'] = (int) $anio;
+        if ($division !== '') $filtros['division'] = (int) $division;
+        if ($fecha !== '') {
+            $filtros['fecha_desde'] = $fecha;
+            $filtros['fecha_hasta'] = $fecha;
+        }
+
+        $registrosAsistencia = self::buildRegistrosAsistencia($filtros);
+
+        ob_start();
+        require __DIR__ . '/../views/directivo/_partial_asistencia_rows.php';
+        $html = ob_get_clean();
+
+        echo json_encode(['ok' => true, 'html' => $html, 'total' => count($registrosAsistencia)]);
     }
 }
