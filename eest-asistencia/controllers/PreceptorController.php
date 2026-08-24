@@ -238,6 +238,57 @@ class PreceptorController {
             ];
         }
 
+        // Justificaciones reales de alumnos de MIS cursos (justificaciones.detalle_id
+        // -> detalles_asistencia -> registros_asistencia -> curso). Reutiliza
+        // la tabla existente tal cual, sin joins inventados.
+        $justificaciones = [];
+        if (!empty($cursoIds)) {
+            $in = implode(',', array_fill(0, count($cursoIds), '?'));
+            $stmtJ = $db->prepare("SELECT j.*, u.nombre AS alumno_nombre, u.apellido AS alumno_apellido,
+                                          reg.fecha, reg.curso_id, c.anio, c.division, m.nombre AS materia_nombre,
+                                          ev.nombre AS enviado_por_nombre, ev.apellido AS enviado_por_apellido, ev.rol AS enviado_por_rol
+                                   FROM justificaciones j
+                                   JOIN detalles_asistencia da ON da.id = j.detalle_id
+                                   JOIN registros_asistencia reg ON reg.id = da.registro_id
+                                   JOIN cursos c ON c.id = reg.curso_id
+                                   JOIN materias m ON m.id = reg.materia_id
+                                   JOIN usuarios u ON u.id = j.alumno_id
+                                   JOIN usuarios ev ON ev.id = j.enviado_por
+                                   WHERE reg.curso_id IN ($in)
+                                   ORDER BY (j.estado = 'pendiente') DESC, j.created_at DESC
+                                   LIMIT 50");
+            $stmtJ->execute($cursoIds);
+            $justificaciones = $stmtJ->fetchAll(PDO::FETCH_ASSOC);
+        }
+
+        // Retiros: registros de asistencia REALES de hoy, para que el
+        // Preceptor pueda marcar rápido a un alumno como retirado
+        // anticipadamente sin pasar por el modal completo de edición.
+        // Reutiliza detalles_asistencia/registros_asistencia tal cual.
+        $retirosHoy = [];
+        if (!empty($cursoIds)) {
+            $in = implode(',', array_fill(0, count($cursoIds), '?'));
+            $stmtR = $db->prepare("SELECT da.id AS detalle_id, da.alumno_id, da.estado, da.hora_retiro,
+                                          u.nombre, u.apellido,
+                                          reg.id AS registro_id, reg.curso_id, reg.hora_inicio, reg.hora_fin, reg.estado AS registro_estado, reg.fecha,
+                                          c.anio, c.division, m.nombre AS materia_nombre
+                                   FROM detalles_asistencia da
+                                   JOIN registros_asistencia reg ON reg.id = da.registro_id
+                                   JOIN cursos c ON c.id = reg.curso_id
+                                   JOIN materias m ON m.id = reg.materia_id
+                                   JOIN usuarios u ON u.id = da.alumno_id
+                                   WHERE reg.curso_id IN ($in) AND reg.fecha = ? AND reg.estado != 'anulada'
+                                   ORDER BY reg.hora_inicio, u.apellido");
+            $stmtR->execute([...$cursoIds, $hoy]);
+            foreach ($stmtR->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                // Mismo criterio "editable_normal" que ya usa el resto de
+                // Preceptor: solo mientras el registro siga 'abierta' (no
+                // 'modificada'/'cerrada'/'anulada').
+                $r['editable'] = Asistencia::resolveEstadoRegistro(['estado' => $r['registro_estado'], 'fecha' => $r['fecha']]) === 'abierta';
+                $retirosHoy[] = $r;
+            }
+        }
+
         return [
             'usuario' => $usuario,
             'turnoResumen' => $turnoResumen,
@@ -251,6 +302,8 @@ class PreceptorController {
             'msgs' => $msgsData,
             'avisos' => $avisos,
             'contactos' => $contactos,
+            'justificaciones' => $justificaciones,
+            'retirosHoy' => $retirosHoy,
             'fechaHoyLarga' => self::fechaLarga($hoy),
         ];
     }
@@ -968,5 +1021,208 @@ class PreceptorController {
             LIMIT 1");
         $stmt2->execute([$destinatarioId, $preceptorId]);
         return (bool) $stmt2->fetchColumn();
+    }
+
+    /**
+     * Verifica que un registro_asistencia (por su curso_id) sea realmente de
+     * un curso a cargo de ESTE preceptor. Nunca se confía en el curso_id que
+     * pueda venir implícito en un ID enviado desde el navegador.
+     */
+    private static function cursoEsDelPreceptor(PDO $db, int $preceptorId, int $cursoId): bool {
+        $stmt = $db->prepare("SELECT 1 FROM preceptor_cursos WHERE preceptor_id = ? AND curso_id = ? AND activo = 1 LIMIT 1");
+        $stmt->execute([$preceptorId, $cursoId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    /**
+     * Aprueba una justificación real (reglas_del_sistema.md §14: "El
+     * Preceptor aprueba/rechaza. El justificado suma falta pero queda
+     * marcado."). Reutiliza Asistencia::updateRegistro() para pasar el
+     * detalle a estado 'justificado' — el mismo método que ya usa Admin y el
+     * resto de Preceptor, así que el recálculo de resumen/auditoría es
+     * exactamente el mismo, no una lógica paralela. La falta NO desaparece
+     * (updateRegistro/calcularFaltaTurno ya suman 1.0 para 'justificado',
+     * igual que para 'ausente' — solo cambia que queda marcada).
+     */
+    public static function aprobarJustificacionAjax(): void {
+        require_role('preceptor');
+        header('Content-Type: application/json');
+        $preceptorId = (int) $_SESSION['usuario_id'];
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido. Recargá la página e intentá de nuevo.']);
+            return;
+        }
+
+        $justificacionId = (int) input('justificacion_id', 0);
+        $comentario = trim((string) input('comentario', ''));
+
+        $db = Database::getConnection();
+        $stmt = $db->prepare("SELECT j.*, da.registro_id, da.alumno_id AS detalle_alumno_id, reg.curso_id
+                               FROM justificaciones j
+                               JOIN detalles_asistencia da ON da.id = j.detalle_id
+                               JOIN registros_asistencia reg ON reg.id = da.registro_id
+                               WHERE j.id = ?");
+        $stmt->execute([$justificacionId]);
+        $just = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$just || !self::cursoEsDelPreceptor($db, $preceptorId, (int) $just['curso_id'])) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Justificación no encontrada.']);
+            return;
+        }
+        if ($just['estado'] !== 'pendiente') {
+            http_response_code(409);
+            echo json_encode(['ok' => false, 'error' => 'Esta justificación ya fue revisada.']);
+            return;
+        }
+
+        $db->prepare("UPDATE justificaciones SET estado = 'aprobada', revisado_por = ?, fecha_revision = NOW(), comentario_revisor = ? WHERE id = ?")
+           ->execute([$preceptorId, $comentario ?: null, $justificacionId]);
+
+        require_once __DIR__ . '/../models/Asistencia.php';
+        Asistencia::updateRegistro(
+            (int) $just['registro_id'],
+            ['alumnos' => [(int) $just['detalle_alumno_id'] => 'justificado']],
+            $preceptorId,
+            "Justificación #$justificacionId aprobada."
+        );
+
+        require_once __DIR__ . '/../models/LogActividad.php';
+        try {
+            LogActividad::registrar($preceptorId, 'APROBAR_JUSTIFICACION', "Aprobó la justificación #$justificacionId", 'justificaciones', $justificacionId, null, null);
+        } catch (Exception $e) {
+            // Best-effort.
+        }
+
+        echo json_encode(['ok' => true]);
+    }
+
+    /**
+     * Rechaza una justificación real. A diferencia de aprobar, NO toca
+     * detalles_asistencia — el detalle sigue 'ausente' tal como estaba.
+     */
+    public static function rechazarJustificacionAjax(): void {
+        require_role('preceptor');
+        header('Content-Type: application/json');
+        $preceptorId = (int) $_SESSION['usuario_id'];
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido. Recargá la página e intentá de nuevo.']);
+            return;
+        }
+
+        $justificacionId = (int) input('justificacion_id', 0);
+        $comentario = trim((string) input('comentario', ''));
+        if ($comentario === '') {
+            http_response_code(422);
+            echo json_encode(['ok' => false, 'error' => 'Ingresá un motivo de rechazo.']);
+            return;
+        }
+
+        $db = Database::getConnection();
+        $stmt = $db->prepare("SELECT j.*, reg.curso_id
+                               FROM justificaciones j
+                               JOIN detalles_asistencia da ON da.id = j.detalle_id
+                               JOIN registros_asistencia reg ON reg.id = da.registro_id
+                               WHERE j.id = ?");
+        $stmt->execute([$justificacionId]);
+        $just = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$just || !self::cursoEsDelPreceptor($db, $preceptorId, (int) $just['curso_id'])) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Justificación no encontrada.']);
+            return;
+        }
+        if ($just['estado'] !== 'pendiente') {
+            http_response_code(409);
+            echo json_encode(['ok' => false, 'error' => 'Esta justificación ya fue revisada.']);
+            return;
+        }
+
+        $db->prepare("UPDATE justificaciones SET estado = 'rechazada', revisado_por = ?, fecha_revision = NOW(), comentario_revisor = ? WHERE id = ?")
+           ->execute([$preceptorId, $comentario, $justificacionId]);
+
+        require_once __DIR__ . '/../models/LogActividad.php';
+        try {
+            LogActividad::registrar($preceptorId, 'RECHAZAR_JUSTIFICACION', "Rechazó la justificación #$justificacionId: $comentario", 'justificaciones', $justificacionId, null, null);
+        } catch (Exception $e) {
+            // Best-effort.
+        }
+
+        echo json_encode(['ok' => true]);
+    }
+
+    /**
+     * Registra el retiro anticipado de un alumno sobre una asistencia YA
+     * tomada hoy (sección "Retiros"). Reutiliza Asistencia::updateRegistro()
+     * para el cambio de estado (misma auditoría/resumen que el resto del
+     * sistema) y solo agrega directamente la hora_retiro real, que
+     * updateRegistro() no gestiona — no se duplica la lógica de faltas.
+     */
+    public static function registrarRetiroAjax(): void {
+        require_role('preceptor');
+        header('Content-Type: application/json');
+        $preceptorId = (int) $_SESSION['usuario_id'];
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido. Recargá la página e intentá de nuevo.']);
+            return;
+        }
+
+        $detalleId = (int) input('detalle_id', 0);
+        $db = Database::getConnection();
+        $stmt = $db->prepare("SELECT da.id, da.alumno_id, da.estado, reg.id AS registro_id, reg.curso_id, reg.estado AS registro_estado, reg.fecha
+                               FROM detalles_asistencia da
+                               JOIN registros_asistencia reg ON reg.id = da.registro_id
+                               WHERE da.id = ?");
+        $stmt->execute([$detalleId]);
+        $detalle = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$detalle || !self::cursoEsDelPreceptor($db, $preceptorId, (int) $detalle['curso_id'])) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Registro no encontrado.']);
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Asistencia.php';
+        $estadoCalculado = Asistencia::resolveEstadoRegistro(['estado' => $detalle['registro_estado'], 'fecha' => $detalle['fecha']]);
+        if ($estadoCalculado !== 'abierta') {
+            http_response_code(422);
+            echo json_encode(['ok' => false, 'error' => 'Esta asistencia ya no está dentro del período editable.']);
+            return;
+        }
+        if ($detalle['estado'] === 'retirado_anticipado') {
+            http_response_code(409);
+            echo json_encode(['ok' => false, 'error' => 'Ese alumno ya figura con retiro anticipado.']);
+            return;
+        }
+
+        $ok = Asistencia::updateRegistro(
+            (int) $detalle['registro_id'],
+            ['alumnos' => [(int) $detalle['alumno_id'] => 'retirado_anticipado']],
+            $preceptorId,
+            'Retiro anticipado registrado desde el portal de Preceptor.'
+        );
+        if (!$ok) {
+            http_response_code(409);
+            echo json_encode(['ok' => false, 'error' => 'No se pudo registrar el retiro.']);
+            return;
+        }
+
+        $horaRetiro = (new DateTimeImmutable('now', new DateTimeZone('America/Argentina/Buenos_Aires')))->format('H:i:s');
+        $db->prepare("UPDATE detalles_asistencia SET hora_retiro = ? WHERE id = ?")->execute([$horaRetiro, $detalleId]);
+
+        require_once __DIR__ . '/../models/LogActividad.php';
+        try {
+            LogActividad::registrar($preceptorId, 'REGISTRAR_RETIRO', "Registró retiro anticipado (detalle #$detalleId)", 'detalles_asistencia', $detalleId, null, null);
+        } catch (Exception $e) {
+            // Best-effort.
+        }
+
+        echo json_encode(['ok' => true, 'horaRetiro' => substr($horaRetiro, 0, 5)]);
     }
 }

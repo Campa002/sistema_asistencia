@@ -79,6 +79,96 @@ if ($page === 'preceptor/indicar_ausencia_ajax' && is_post()) {
     exit;
 }
 
+if ($page === 'preceptor/aprobar_justificacion_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::aprobarJustificacionAjax();
+    exit;
+}
+
+if ($page === 'preceptor/rechazar_justificacion_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::rechazarJustificacionAjax();
+    exit;
+}
+
+if ($page === 'preceptor/registrar_retiro_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PreceptorController.php';
+    PreceptorController::registrarRetiroAjax();
+    exit;
+}
+
+if ($page === 'directivo/aprobar_solicitud_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::aprobarSolicitudAjax();
+    exit;
+}
+
+if ($page === 'directivo/rechazar_solicitud_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::rechazarSolicitudAjax();
+    exit;
+}
+
+if ($page === 'directivo/preceptores_disponibles_ajax') {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::preceptoresDisponiblesAjax();
+    exit;
+}
+
+if ($page === 'directivo/asignar_reemplazo_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::asignarReemplazoAjax();
+    exit;
+}
+
+if ($page === 'directivo/marcar_notificacion_leida_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::marcarNotificacionLeidaAjax();
+    exit;
+}
+
+if ($page === 'directivo/actualizar_perfil_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::actualizarPerfilAjax();
+    exit;
+}
+
+if ($page === 'directivo/materias_de_curso_fecha_ajax') {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::materiasDeCursoFechaAjax();
+    exit;
+}
+
+if ($page === 'directivo/crear_reemplazo_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::crearReemplazoAjax();
+    exit;
+}
+
+if ($page === 'directivo/cancelar_reemplazo_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::cancelarReemplazoAjax();
+    exit;
+}
+
+if ($page === 'directivo/marcar_realizado_reemplazo_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/DirectivoController.php';
+    DirectivoController::marcarRealizadoReemplazoAjax();
+    exit;
+}
+
+if ($page === 'padre_tutor/enviar_justificacion_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PadreTutorController.php';
+    PadreTutorController::enviarJustificacionAjax();
+    exit;
+}
+
+if ($page === 'padre_tutor/marcar_notificacion_leida_ajax' && is_post()) {
+    require_once __DIR__ . '/../controllers/PadreTutorController.php';
+    PadreTutorController::marcarNotificacionLeidaAjax();
+    exit;
+}
+
 if ($page === 'padre_tutor/enviar_mensaje_ajax' && is_post()) {
     require_once __DIR__ . '/../controllers/PadreTutorController.php';
     PadreTutorController::enviarMensajeAjax();

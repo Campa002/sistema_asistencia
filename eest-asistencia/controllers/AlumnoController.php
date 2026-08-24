@@ -108,6 +108,37 @@ class AlumnoController {
         $stmtT->execute([$alumnoId]);
         $tutor = $stmtT->fetch(PDO::FETCH_ASSOC);
 
+        // Horario semanal y materias reales del curso (asignaciones_materias),
+        // reutilizando Materia::getAsignaciones() — el mismo método que ya
+        // usan Admin → Horarios y el portal de Preceptor, no se duplica la
+        // consulta. Sin curso, no hay horario que mostrar.
+        $horarioPorDia = [];
+        $materiasCurso = [];
+        if ($curso) {
+            require_once __DIR__ . '/../models/Materia.php';
+            $diasNombre = [1 => 'Lunes', 2 => 'Martes', 3 => 'Miércoles', 4 => 'Jueves', 5 => 'Viernes', 6 => 'Sábado', 7 => 'Domingo'];
+            $asignaciones = Materia::getAsignaciones((int) $curso['id']);
+            $vistas = [];
+            foreach ($asignaciones as $a) {
+                $dia = $diasNombre[(int) $a['dia_semana']] ?? '';
+                if ($dia === '') continue;
+                $horarioPorDia[$dia][] = [
+                    'materia' => $a['materia_nombre'],
+                    'horaInicio' => substr($a['hora_inicio'], 0, 5),
+                    'horaFin' => substr($a['hora_fin'], 0, 5),
+                ];
+                if (!isset($vistas[$a['materia_id']])) {
+                    $vistas[$a['materia_id']] = true;
+                    $materiasCurso[] = $a['materia_nombre'];
+                }
+            }
+            foreach ($horarioPorDia as &$filas) {
+                usort($filas, fn($x, $y) => strcmp($x['horaInicio'], $y['horaInicio']));
+            }
+            unset($filas);
+            sort($materiasCurso, SORT_STRING | SORT_FLAG_CASE);
+        }
+
         // Mensajes reales
         $conversaciones = Mensaje::getAllConversations($alumnoId);
         $msgsData = [];
@@ -147,6 +178,8 @@ class AlumnoController {
             'notificaciones' => $notificaciones,
             'companeros' => $companeros,
             'tutor' => $tutor,
+            'horarioPorDia' => $horarioPorDia,
+            'materiasCurso' => $materiasCurso,
             'msgs' => $msgsData,
             'fechaHoyLarga' => format_date_long_argentina(),
         ];

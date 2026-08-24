@@ -12,6 +12,8 @@ let currentMonth = SD.mesInicial;
 let currentYear  = SD.anioInicial;
 
 const DIAS_DATA = SD.porMes;
+let ausenciasJustificablesData = SD.ausenciasJustificables || [];
+let justificacionesEnviadasData = SD.justificacionesEnviadas || [];
 const msgsData = SD.msgs.map(function (m) {
   return {
     id: m.id, from: m.from, role: m.role, time: m.time, unread: m.unread,
@@ -33,10 +35,161 @@ function showView(name){
   if(nav) nav.classList.add('active');
   if(name==='mensajes') renderMsgList();
   if(name==='registro') renderDayRows();
+  if(name==='justificaciones') renderJustificaciones();
   closeSidebar();
   syncBNav(name);
   window.scrollTo(0,0);
   document.getElementById('notif-panel').classList.remove('open');
+  // Se recuerda la sección activa: si alguna acción necesita recargar la
+  // página completa (ej. cambiar de alumno vinculado), se restaura acá
+  // mismo en vez de volver siempre a "Resumen" — mismo mecanismo que ya
+  // usa el portal de Directivo.
+  try { sessionStorage.setItem('ptSeccionActiva', name); } catch (e) {}
+}
+
+// ═══════════════════════════════════════
+//  SELECTOR DE ALUMNO (varios vinculados)
+// ═══════════════════════════════════════
+function toggleSelectorAlumno(){
+  var dd = document.getElementById('selector-alumno-dropdown');
+  if (!dd) return;
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', function (e) {
+  var dd = document.getElementById('selector-alumno-dropdown');
+  if (!dd || dd.style.display === 'none') return;
+  if (!e.target.closest('.alumno-selector') && !e.target.closest('#selector-alumno-dropdown')) {
+    dd.style.display = 'none';
+  }
+});
+
+// ═══════════════════════════════════════
+//  NOTIFICACIONES (marcar leída, real)
+// ═══════════════════════════════════════
+function marcarNotificacionLeidaPT(notificacionId){
+  var body = new URLSearchParams({ notificacion_id: notificacionId, csrf_token: SD.csrfToken });
+  fetch('index.php?page=padre_tutor/marcar_notificacion_leida_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        showToast(data.error || 'No se pudo marcar como leída.', 'error');
+        return;
+      }
+      var item = document.getElementById('pt-notif-' + notificacionId);
+      if (item) {
+        item.style.cursor = 'default';
+        item.style.background = '';
+        item.removeAttribute('onclick');
+        var badge = item.querySelector('.notif-p-title span');
+        if (badge) badge.remove();
+      }
+    })
+    .catch(function () {
+      showToast('No se pudo marcar como leída. Verificá tu conexión.', 'error');
+    });
+}
+
+// ═══════════════════════════════════════
+//  JUSTIFICACIONES
+// ═══════════════════════════════════════
+var ETIQUETAS_TIPO_JUST = { medica: 'Médica', personal: 'Personal', academica: 'Académica', otro: 'Otro' };
+var ETIQUETAS_ESTADO_JUST = { pendiente: 'Pendiente', aprobada: 'Aprobada', rechazada: 'Rechazada' };
+
+function renderJustificaciones(){
+  var contAus = document.getElementById('ausencias-justificables-list');
+  var contEnv = document.getElementById('justificaciones-enviadas-list');
+  if (!contAus || !contEnv) return;
+
+  contAus.innerHTML = ausenciasJustificablesData.length
+    ? ausenciasJustificablesData.map(function (a) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #F1F3F5;">'
+          + '<div><div style="font-weight:600;font-size:13.5px;">' + a.fecha + '</div>'
+          + '<div style="font-size:12px;color:#6C757D;">' + a.materia + '</div></div>'
+          + '<button class="btn-soporte" style="padding:7px 14px;font-size:12.5px;" onclick="abrirModalJustificar(' + a.detalleId + ', \'' + a.fecha + '\', \'' + a.materia.replace(/'/g, "\\'") + '\')">Justificar</button>'
+          + '</div>';
+      }).join('')
+    : '<div style="padding:12px 0;color:#6C757D;font-size:13px;">No hay ausencias pendientes de justificar.</div>';
+
+  contEnv.innerHTML = justificacionesEnviadasData.length
+    ? justificacionesEnviadasData.map(function (j) {
+        var color = j.estado === 'aprobada' ? '#28A745' : (j.estado === 'rechazada' ? '#DC3545' : '#F39C12');
+        return '<div style="padding:10px 0;border-bottom:1px solid #F1F3F5;">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+          + '<div style="font-weight:600;font-size:13.5px;">' + j.fecha + ' — ' + j.materia + '</div>'
+          + '<span style="color:' + color + ';font-weight:700;font-size:12px;">' + ETIQUETAS_ESTADO_JUST[j.estado] + '</span>'
+          + '</div>'
+          + '<div style="font-size:12px;color:#6C757D;">' + ETIQUETAS_TIPO_JUST[j.tipo] + ': ' + j.motivo + '</div>'
+          + (j.comentarioRevisor ? '<div style="font-size:12px;color:#6C757D;margin-top:2px;"><i>' + j.comentarioRevisor + '</i></div>' : '')
+          + '</div>';
+      }).join('')
+    : '<div style="padding:12px 0;color:#6C757D;font-size:13px;">Todavía no enviaste ninguna justificación.</div>';
+}
+
+var justificarDetalleActual = null;
+
+function abrirModalJustificar(detalleId, fecha, materia){
+  justificarDetalleActual = detalleId;
+  document.getElementById('just-detalle-info').textContent = fecha + ' — ' + materia;
+  document.getElementById('just-tipo').value = 'personal';
+  document.getElementById('just-motivo').value = '';
+  document.getElementById('modal-justificar-overlay').style.display = 'flex';
+}
+
+function cerrarModalJustificar(){
+  justificarDetalleActual = null;
+  document.getElementById('modal-justificar-overlay').style.display = 'none';
+}
+
+function enviarJustificacion(){
+  if (!justificarDetalleActual) return;
+  var tipo = document.getElementById('just-tipo').value;
+  var motivo = document.getElementById('just-motivo').value.trim();
+  if (!motivo) { showToast('Ingresá el motivo de la justificación.', 'warning'); return; }
+
+  var detalleId = justificarDetalleActual;
+  var btn = document.getElementById('btn-enviar-justificacion');
+  if (btn) btn.disabled = true;
+
+  var body = new URLSearchParams({ detalle_id: detalleId, tipo: tipo, motivo: motivo, csrf_token: SD.csrfToken });
+  fetch('index.php?page=padre_tutor/enviar_justificacion_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (btn) btn.disabled = false;
+      if (!data.ok) { showToast(data.error || 'No se pudo enviar la justificación.', 'error'); return; }
+      cerrarModalJustificar();
+
+      var idx = ausenciasJustificablesData.findIndex(function (a) { return a.detalleId === detalleId; });
+      var ausencia = idx >= 0 ? ausenciasJustificablesData[idx] : null;
+      if (idx >= 0) ausenciasJustificablesData.splice(idx, 1);
+      if (ausencia) {
+        justificacionesEnviadasData.unshift({
+          id: data.justificacionId, fecha: ausencia.fecha, materia: ausencia.materia,
+          tipo: tipo, motivo: motivo, estado: 'pendiente', comentarioRevisor: null
+        });
+      }
+      renderJustificaciones();
+      showToast('Justificación enviada correctamente.', 'success');
+    })
+    .catch(function () {
+      if (btn) btn.disabled = false;
+      showToast('No se pudo enviar la justificación. Verificá tu conexión.', 'error');
+    });
+}
+
+function restaurarSeccionActivaPT(){
+  var guardada = null;
+  try { guardada = sessionStorage.getItem('ptSeccionActiva'); } catch (e) {}
+  if (!guardada || guardada === 'resumen') return;
+  if (!document.getElementById('view-' + guardada)) return;
+  showView(guardada);
 }
 
 function syncBNav(name){
@@ -256,17 +409,18 @@ function sendMsg(){
     .then(function (data) {
       input.disabled = false;
       if (!data.ok) {
-        alert(data.error || 'No se pudo enviar el mensaje.');
+        showToast(data.error || 'No se pudo enviar el mensaje.', 'error');
         input.value = text;
         return;
       }
       conv.conversation.push({ dir:'out', text, time: data.hora || nowTime(), hasFile:false });
       conv.preview = text;
       renderChat(conv);
+      showToast('Mensaje enviado correctamente.', 'success');
     })
     .catch(function () {
       input.disabled = false;
-      alert('No se pudo enviar el mensaje. Verificá tu conexión.');
+      showToast('No se pudo enviar el mensaje. Verificá tu conexión.', 'error');
       input.value = text;
     });
 }
@@ -288,5 +442,6 @@ function autoGrow(el){
 //  INIT
 // ═══════════════════════════════════════
 showView('resumen');
+restaurarSeccionActivaPT();
 renderDayRows();
 renderMsgList();

@@ -15,7 +15,15 @@ require_once __DIR__ . '/../includes/helpers.php';
  */
 class PadreTutorController {
 
-    public static function portalData(int $padreTutorId): array {
+    /**
+     * $alumnoIdSeleccionado: para tutores con más de un alumno vinculado
+     * (reglas_del_sistema.md permite varias vinculaciones aprobadas por
+     * tutor). Nunca se confía en el valor que llega de la URL: si no está
+     * realmente entre los vinculados y aprobados de ESTE tutor, se ignora y
+     * se usa el primero — así ningún tutor puede ver a un alumno ajeno
+     * cambiando el parámetro a mano.
+     */
+    public static function portalData(int $padreTutorId, ?int $alumnoIdSeleccionado = null): array {
         $db = Database::getConnection();
         $usuario = Usuario::getById($padreTutorId);
 
@@ -37,7 +45,10 @@ class PadreTutorController {
             ];
         }
 
-        $alumnoId = (int) $vinculados[0]['alumno_id'];
+        $idsVinculados = array_map(fn($v) => (int) $v['alumno_id'], $vinculados);
+        $alumnoId = ($alumnoIdSeleccionado !== null && in_array($alumnoIdSeleccionado, $idsVinculados, true))
+            ? $alumnoIdSeleccionado
+            : $idsVinculados[0];
 
         $stmtA = $db->prepare("SELECT u.*, ac.curso_id, ac.estado AS matricula_estado
                                 FROM usuarios u
@@ -114,13 +125,45 @@ class PadreTutorController {
             ];
         }
 
-        // Notificaciones (panel de campana)
-        $stmtN = $db->prepare("SELECT * FROM notificaciones
-                                WHERE activo = 1 AND tipo != 'comunicado'
-                                  AND (FIND_IN_SET('padre_tutor', rol_destino) > 0 OR FIND_IN_SET('todos', rol_destino) > 0)
-                                ORDER BY created_at DESC LIMIT 5");
-        $stmtN->execute();
+        // Notificaciones (panel de campana) — con estado real de lectura
+        // por-usuario (notificaciones_leidas), mismo criterio que ya usa
+        // Directivo.
+        $stmtN = $db->prepare("SELECT n.*, (nl.id IS NOT NULL) AS leida
+                                FROM notificaciones n
+                                LEFT JOIN notificaciones_leidas nl ON nl.notificacion_id = n.id AND nl.usuario_id = ?
+                                WHERE n.activo = 1 AND n.tipo != 'comunicado'
+                                  AND (FIND_IN_SET('padre_tutor', n.rol_destino) > 0 OR FIND_IN_SET('todos', n.rol_destino) > 0)
+                                ORDER BY n.created_at DESC LIMIT 15");
+        $stmtN->execute([$padreTutorId]);
         $notificaciones = $stmtN->fetchAll(PDO::FETCH_ASSOC);
+
+        // Ausencias reales del alumno que todavía se pueden justificar: estado
+        // 'ausente' y sin ninguna justificación pendiente/aprobada ya cargada
+        // para ese detalle puntual (evita duplicados).
+        $stmtAus = $db->prepare("SELECT da.id AS detalle_id, reg.fecha, m.nombre AS materia_nombre
+                                  FROM detalles_asistencia da
+                                  JOIN registros_asistencia reg ON reg.id = da.registro_id
+                                  JOIN materias m ON m.id = reg.materia_id
+                                  WHERE da.alumno_id = ? AND da.estado = 'ausente' AND reg.estado != 'anulada'
+                                    AND NOT EXISTS (
+                                      SELECT 1 FROM justificaciones j
+                                      WHERE j.detalle_id = da.id AND j.estado IN ('pendiente', 'aprobada')
+                                    )
+                                  ORDER BY reg.fecha DESC LIMIT 30");
+        $stmtAus->execute([$alumnoId]);
+        $ausenciasJustificables = $stmtAus->fetchAll(PDO::FETCH_ASSOC);
+
+        // Justificaciones ya enviadas por este tutor para este alumno (para
+        // que vea el estado de lo que ya mandó, no solo poder mandar nuevas).
+        $stmtJEnv = $db->prepare("SELECT j.*, reg.fecha, m.nombre AS materia_nombre
+                                   FROM justificaciones j
+                                   JOIN detalles_asistencia da ON da.id = j.detalle_id
+                                   JOIN registros_asistencia reg ON reg.id = da.registro_id
+                                   JOIN materias m ON m.id = reg.materia_id
+                                   WHERE j.alumno_id = ? AND j.enviado_por = ?
+                                   ORDER BY j.created_at DESC LIMIT 20");
+        $stmtJEnv->execute([$alumnoId, $padreTutorId]);
+        $justificacionesEnviadas = $stmtJEnv->fetchAll(PDO::FETCH_ASSOC);
 
         return [
             'usuario' => $usuario,
@@ -139,6 +182,8 @@ class PadreTutorController {
             'avisoImportante' => $avisoImportante,
             'msgs' => $msgsData,
             'notificaciones' => $notificaciones,
+            'ausenciasJustificables' => $ausenciasJustificables,
+            'justificacionesEnviadas' => $justificacionesEnviadas,
             'fechaHoyLarga' => format_date_long_argentina(),
         ];
     }
@@ -212,5 +257,109 @@ class PadreTutorController {
         LogActividad::registrar($userId, 'ENVIAR_MENSAJE', "Envió un mensaje en la conversación #$conversacionId", 'mensajes', $conversacionId, null, null);
 
         echo json_encode(['ok' => true, 'conversacionId' => $conversacionId, 'hora' => date('H:i')]);
+    }
+
+    /**
+     * Marca una notificación institucional como leída para ESTE tutor
+     * (notificaciones_leidas es por-usuario) — mismo criterio que ya usa
+     * Directivo. INSERT IGNORE por la UNIQUE(notificacion_id, usuario_id):
+     * un segundo click no duplica nada.
+     */
+    public static function marcarNotificacionLeidaAjax(): void {
+        require_role('padre_tutor');
+        header('Content-Type: application/json');
+        $userId = (int) $_SESSION['usuario_id'];
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido.']);
+            return;
+        }
+
+        $notifId = (int) input('notificacion_id', 0);
+        $db = Database::getConnection();
+        $stmt = $db->prepare("SELECT id FROM notificaciones WHERE id = ?");
+        $stmt->execute([$notifId]);
+        if (!$stmt->fetchColumn()) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Notificación no encontrada.']);
+            return;
+        }
+
+        $db->prepare("INSERT IGNORE INTO notificaciones_leidas (notificacion_id, usuario_id) VALUES (?, ?)")
+           ->execute([$notifId, $userId]);
+
+        echo json_encode(['ok' => true]);
+    }
+
+    /**
+     * Envía una justificación real (reglas_del_sistema.md §14: "El
+     * Padre/Tutor puede enviar justificaciones"). Nunca confía en el
+     * alumno_id/detalle_id del navegador: el detalle elegido tiene que
+     * pertenecer a un alumno realmente vinculado y aprobado para ESTE tutor.
+     */
+    public static function enviarJustificacionAjax(): void {
+        require_role('padre_tutor');
+        header('Content-Type: application/json');
+        $padreTutorId = (int) $_SESSION['usuario_id'];
+
+        if (!verify_csrf_token(input('csrf_token', ''))) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Token de seguridad inválido. Recargá la página e intentá de nuevo.']);
+            return;
+        }
+
+        $detalleId = (int) input('detalle_id', 0);
+        $tipo = input('tipo', 'personal');
+        $motivo = trim((string) input('motivo', ''));
+        if (!in_array($tipo, ['medica', 'personal', 'academica', 'otro'], true)) $tipo = 'otro';
+        if ($motivo === '') {
+            http_response_code(422);
+            echo json_encode(['ok' => false, 'error' => 'Ingresá el motivo de la justificación.']);
+            return;
+        }
+
+        $db = Database::getConnection();
+
+        // El detalle elegido tiene que ser una ausencia real de un alumno
+        // realmente vinculado y aprobado para este tutor.
+        $stmt = $db->prepare("SELECT da.id, da.alumno_id, da.estado
+                               FROM detalles_asistencia da
+                               JOIN vinculaciones v ON v.alumno_id = da.alumno_id AND v.padre_tutor_id = ? AND v.estado = 'aprobado'
+                               WHERE da.id = ?");
+        $stmt->execute([$padreTutorId, $detalleId]);
+        $detalle = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$detalle) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Esa asistencia no corresponde a un alumno vinculado a tu cuenta.']);
+            return;
+        }
+        if ($detalle['estado'] !== 'ausente') {
+            http_response_code(422);
+            echo json_encode(['ok' => false, 'error' => 'Solo se pueden justificar ausencias.']);
+            return;
+        }
+
+        $stmtDup = $db->prepare("SELECT id FROM justificaciones WHERE detalle_id = ? AND estado IN ('pendiente', 'aprobada') LIMIT 1");
+        $stmtDup->execute([$detalleId]);
+        if ($stmtDup->fetchColumn()) {
+            http_response_code(409);
+            echo json_encode(['ok' => false, 'error' => 'Ya existe una justificación activa para esa ausencia.']);
+            return;
+        }
+
+        $db->prepare("INSERT INTO justificaciones (alumno_id, detalle_id, enviado_por, tipo, motivo, estado) VALUES (?, ?, ?, ?, ?, 'pendiente')")
+           ->execute([(int) $detalle['alumno_id'], $detalleId, $padreTutorId, $tipo, $motivo]);
+        $nuevoId = (int) $db->lastInsertId();
+
+        require_once __DIR__ . '/../models/LogActividad.php';
+        try {
+            LogActividad::registrar($padreTutorId, 'ENVIAR_JUSTIFICACION', "Envió la justificación #$nuevoId", 'justificaciones', $nuevoId, null, null);
+        } catch (Exception $e) {
+            // Best-effort.
+        }
+
+        echo json_encode(['ok' => true, 'justificacionId' => $nuevoId]);
     }
 }

@@ -1,0 +1,106 @@
+/* Sistema de notificaciones visuales compartido (reemplaza alert()/confirm()
+   del navegador — "localhost dice"). Usado por los portales que todavía no
+   tenían su propio sistema (Estudiante, Padre/Tutor). Preceptor y Directivo
+   ya tienen el suyo propio (mismo patrón visual, CSS local a cada uno) y no
+   se tocan para no arriesgar esos módulos ya cerrados. */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #FFFFFF;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.16);
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1A2B4C;
+  border-left: 4px solid #ADB5BD;
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.toast-in { opacity: 1; transform: translateX(0); }
+.toast-out { opacity: 0; transform: translateX(16px); }
+.toast-success { border-left-color: #28A745; }
+.toast-error { border-left-color: #DC3545; }
+.toast-warning { border-left-color: #F39C12; }
+.toast-info { border-left-color: #3498DB; }
+.toast-success .toast-icon { color: #28A745; }
+.toast-error .toast-icon { color: #DC3545; }
+.toast-warning .toast-icon { color: #F39C12; }
+.toast-info .toast-icon { color: #3498DB; }
+.toast-icon { font-weight: 700; flex-shrink: 0; }
+.toast-msg { flex: 1; line-height: 1.35; }
+.toast-close {
+  background: none; border: none; cursor: pointer;
+  color: #ADB5BD; font-size: 15px; line-height: 1; padding: 0;
+}
+.toast-close:hover { color: #495057; }
+
+@media (max-width: 480px) {
+  .toast-container { left: 16px; right: 16px; max-width: none; }
+}
+
+/* Modal de confirmación propio (reemplaza confirm() del navegador) para
+   acciones que sí necesitan una confirmación explícita, ej. cerrar sesión. */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 29, 58, .45);
+  z-index: 3900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.confirm-modal {
+  background: #FFFFFF;
+  border-radius: 12px;
+  padding: 22px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.2);
+  text-align: center;
+}
+.confirm-modal__titulo {
+  font-size: 16px;
+  font-weight: 700;
+  color: #071D3A;
+  margin-bottom: 8px;
+}
+.confirm-modal__texto {
+  font-size: 13.5px;
+  color: #6C757D;
+  margin-bottom: 18px;
+}
+.confirm-modal__acciones {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.confirm-modal__acciones button {
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+}
+.confirm-modal__cancelar {
+  background: #F1F3F5;
+  color: #495057;
+}
+.confirm-modal__aceptar {
+  background: #DC3545;
+  color: #FFFFFF;
+}

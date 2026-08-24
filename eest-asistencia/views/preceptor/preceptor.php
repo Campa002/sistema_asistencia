@@ -95,6 +95,16 @@ $turno = $portal['turnoResumen'];
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         <span class="nav-label">Alumnos</span>
       </div>
+      <div class="nav-item" id="nav-justificaciones" onclick="showView('justificaciones')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="11" y2="11"/></svg>
+        <span class="nav-label">Justificaciones</span>
+        <?php $pendJust = count(array_filter($portal['justificaciones'], fn($j) => $j['estado'] === 'pendiente')); ?>
+        <?php if ($pendJust > 0): ?><span style="background:var(--red,#DC3545);color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:6px;"><?= (int) $pendJust ?></span><?php endif; ?>
+      </div>
+      <div class="nav-item" id="nav-retiros" onclick="showView('retiros')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span class="nav-label">Retiros</span>
+      </div>
       <div class="nav-item" id="nav-mensajes" onclick="showView('mensajes')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         <span class="nav-label">Mensajes</span>
@@ -381,6 +391,22 @@ $turno = $portal['turnoResumen'];
       </div>
     </section>
 
+    <!-- ══════════ JUSTIFICACIONES ══════════ -->
+    <section class="view" id="view-justificaciones">
+      <div class="eyebrow">Panel de Control</div>
+      <div class="page-title">Justificaciones</div>
+      <div style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Ausencias justificadas por padres/tutores de tus cursos.</div>
+      <div id="justificaciones-list"></div>
+    </section>
+
+    <!-- ══════════ RETIROS ══════════ -->
+    <section class="view" id="view-retiros">
+      <div class="eyebrow">Panel de Control</div>
+      <div class="page-title">Retiros Anticipados</div>
+      <div style="font-size:13px;color:var(--gray-500);margin-bottom:16px">Asistencias de hoy — marcá el retiro anticipado de un alumno cuando corresponda.</div>
+      <div id="retiros-list"></div>
+    </section>
+
     <!-- ══════════ MENSAJES ══════════ -->
     <section class="view" id="view-mensajes">
       <div class="eyebrow">Centro de Mensajería</div>
@@ -570,6 +596,26 @@ $turno = $portal['turnoResumen'];
   </div>
 </div>
 
+<!-- Modal: rechazar justificación -->
+<div class="modal-overlay" id="modal-rechazo-just-overlay" style="display:none" onclick="if(event.target===this) cerrarModalRechazoJustificacion()">
+  <div class="modal-box modal-box-sm">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">Rechazar justificación</div>
+        <div class="modal-sub">Explicá brevemente por qué se rechaza.</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="cerrarModalRechazoJustificacion()">Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <textarea class="msg-input" style="width:100%" rows="3" id="rechazo-just-comentario" placeholder="Ej: falta certificado médico..."></textarea>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" onclick="cerrarModalRechazoJustificacion()">Cancelar</button>
+      <button type="button" class="btn btn-danger" id="btn-confirmar-rechazo-just" onclick="confirmarRechazoJustificacion()">Rechazar</button>
+    </div>
+  </div>
+</div>
+
 <script>
   // Datos reales inyectados por el servidor (reemplazan los mocks
   // hardcodeados que tenía preceptor.js). Ver PreceptorController::portalData().
@@ -594,6 +640,31 @@ $turno = $portal['turnoResumen'];
       ], $asignaciones);
     }
 
+    $justificacionesJs = array_map(fn($j) => [
+      'id' => (int) $j['id'],
+      'alumno' => $j['alumno_apellido'] . ', ' . $j['alumno_nombre'],
+      'curso' => $j['anio'] . '° ' . $j['division'] . '°',
+      'materia' => $j['materia_nombre'],
+      'fecha' => $j['fecha'],
+      'tipo' => $j['tipo'],
+      'motivo' => $j['motivo'],
+      'estado' => $j['estado'],
+      'enviadoPor' => $j['enviado_por_nombre'] . ' ' . $j['enviado_por_apellido'] . ' (' . ucfirst(str_replace('_', ' ', $j['enviado_por_rol'])) . ')',
+      'creado' => $j['created_at'],
+      'comentarioRevisor' => $j['comentario_revisor'],
+    ], $portal['justificaciones']);
+
+    $retirosJs = array_map(fn($r) => [
+      'detalleId' => (int) $r['detalle_id'],
+      'alumno' => $r['apellido'] . ', ' . $r['nombre'],
+      'curso' => $r['anio'] . '° ' . $r['division'] . '°',
+      'materia' => $r['materia_nombre'],
+      'horario' => substr($r['hora_inicio'], 0, 5) . ' - ' . substr($r['hora_fin'], 0, 5),
+      'estado' => $r['estado'],
+      'horaRetiro' => $r['hora_retiro'] ? substr($r['hora_retiro'], 0, 5) : null,
+      'editable' => (bool) $r['editable'],
+    ], $portal['retirosHoy']);
+
     echo json_encode([
       'cursos' => $portal['cursos'],
       'alumnos' => $portal['alumnos'],
@@ -602,10 +673,12 @@ $turno = $portal['turnoResumen'];
       'bloques' => $bloques,
       'horariosPorCurso' => $horariosPorCurso,
       'contactos' => $portal['contactos'],
+      'justificaciones' => $justificacionesJs,
+      'retiros' => $retirosJs,
       'csrfToken' => csrf_token(),
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
   ?>;
 </script>
-<script src="../public/assets/js/preceptor.js?v=3"></script>
+<script src="../public/assets/js/preceptor.js?v=4"></script>
 
 </div>

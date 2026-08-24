@@ -1725,3 +1725,102 @@
     overflow-x: hidden;
   }
 }
+
+/* ─── Toasts (reemplazan alert()/confirm()) ─── */
+#directivo-portal-root .toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+#directivo-portal-root .toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--blanco);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.14);
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--azul-oscuro);
+  border-left: 4px solid var(--gris-texto);
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+#directivo-portal-root .toast-in { opacity: 1; transform: translateX(0); }
+#directivo-portal-root .toast-out { opacity: 0; transform: translateX(16px); }
+#directivo-portal-root .toast-success { border-left-color: var(--verde); }
+#directivo-portal-root .toast-error { border-left-color: var(--rojo); }
+#directivo-portal-root .toast-warning { border-left-color: var(--amarillo); }
+#directivo-portal-root .toast-info { border-left-color: var(--azul-claro); }
+#directivo-portal-root .toast-success .toast-icon { color: var(--verde); }
+#directivo-portal-root .toast-error .toast-icon { color: var(--rojo); }
+#directivo-portal-root .toast-warning .toast-icon { color: var(--amarillo); }
+#directivo-portal-root .toast-info .toast-icon { color: var(--azul-claro); }
+#directivo-portal-root .toast-icon { font-weight: 700; flex-shrink: 0; }
+#directivo-portal-root .toast-msg { flex: 1; line-height: 1.35; }
+#directivo-portal-root .toast-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--gris-texto); font-size: 15px; line-height: 1; padding: 0;
+}
+#directivo-portal-root .toast-close:hover { color: var(--azul-oscuro); }
+
+/* ─── Modales de acción (rechazo / asignar / perfil) ─── */
+#directivo-portal-root .modal-overlay-directivo {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 29, 58, .45);
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+#directivo-portal-root .modal-directivo {
+  background: var(--blanco);
+  border-radius: 12px;
+  padding: 22px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.2);
+}
+#directivo-portal-root .modal-directivo__titulo {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--azul-oscuro);
+  margin-bottom: 16px;
+}
+#directivo-portal-root .modal-directivo__campo { margin-bottom: 14px; }
+#directivo-portal-root .modal-directivo__campo label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gris-texto);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-bottom: 6px;
+}
+#directivo-portal-root .modal-directivo__campo input,
+#directivo-portal-root .modal-directivo__campo select,
+#directivo-portal-root .modal-directivo__campo textarea {
+  width: 100%;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--azul-oscuro);
+}
+#directivo-portal-root .modal-directivo__campo textarea { resize: vertical; }
+#directivo-portal-root .modal-directivo__acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}

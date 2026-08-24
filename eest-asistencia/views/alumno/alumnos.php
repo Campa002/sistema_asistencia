@@ -16,6 +16,8 @@ $cursoLabelLarga = $curso ? ($curso['anio'] . '° Año - ' . ($curso['especialid
 $curso_sidebar = $cursoLabel;
 ?>
 <link rel="stylesheet" href="../public/assets/css/alumnos.css">
+<link rel="stylesheet" href="../public/assets/css/toast.css">
+<div id="toast-container" class="toast-container"></div>
 
 <div id="alumno-portal-root">
 
@@ -217,6 +219,32 @@ $curso_sidebar = $cursoLabel;
             <?php endforeach; endif; ?>
           </div>
  
+          <!-- Mi Horario -->
+          <div class="tarjeta tarjeta-notificaciones">
+            <div class="avisos-cabecera">
+              <span class="tarjeta-titulo" style="margin-bottom:0">Mi horario semanal</span>
+            </div>
+            <?php if (empty($portal['horarioPorDia'])): ?>
+              <div style="padding:14px 0;color:#6C757D;font-size:13px;">Sin curso asignado, no hay horario para mostrar.</div>
+            <?php else: ?>
+              <div style="padding:6px 0 2px;font-size:12px;color:#6C757D;">
+                Materias: <?= e(implode(', ', $portal['materiasCurso'])) ?>
+              </div>
+              <?php foreach (['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'] as $dia): ?>
+                <?php if (empty($portal['horarioPorDia'][$dia])) continue; ?>
+                <div class="notificacion-item" style="align-items:flex-start;">
+                  <div class="notificacion-dot verde" style="margin-top:4px;"></div>
+                  <div>
+                    <div class="notificacion-texto"><?= e($dia) ?></div>
+                    <?php foreach ($portal['horarioPorDia'][$dia] as $bloque): ?>
+                      <div class="notificacion-tiempo"><?= e($bloque['horaInicio']) ?>–<?= e($bloque['horaFin']) ?> · <?= e($bloque['materia']) ?></div>
+                    <?php endforeach; ?>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </div>
+
           <!-- Panel calificaciones -->
           <div class="tarjeta tarjeta-calificaciones">
             <div class="calificaciones-cabecera">
@@ -670,4 +698,5 @@ $curso_sidebar = $cursoLabel;
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
   ?>;
 </script>
-<script src="../public/assets/js/alumnos.js?v=4"></script>
+<script src="../public/assets/js/toast.js"></script>
+<script src="../public/assets/js/alumnos.js?v=5"></script>

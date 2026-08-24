@@ -135,6 +135,8 @@ let attendData = [];
 let filteredAlumnos = [...studentsData];
 let filteredHistorial = [...histData];
 const contactosData = SD.contactos || [];
+let justificacionesData = SD.justificaciones || [];
+let retirosData = SD.retiros || [];
 
 // Estado del modal "Ver Detalle" / "Editar" de un registro de Historial.
 let detalleModalData = null; // { registroId, curso, materia, fecha, turno, editable, alumnos: [...] }
@@ -192,6 +194,14 @@ function showView(name) {
 
   if (name === 'mensajes') {
     renderMsgs();
+  }
+
+  if (name === 'justificaciones') {
+    renderJustificaciones();
+  }
+
+  if (name === 'retiros') {
+    renderRetiros();
   }
 
   const main = document.querySelector(
@@ -1514,6 +1524,155 @@ function confirmarAusencia() {
       if (btn) btn.disabled = false;
       showToast('No se pudo registrar la ausencia. Verificá tu conexión.', 'error');
     });
+}
+
+// ─── JUSTIFICACIONES ───
+function renderJustificaciones() {
+  var cont = document.getElementById('justificaciones-list');
+  if (!cont) return;
+
+  if (justificacionesData.length === 0) {
+    cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--gray-400)">No hay justificaciones para tus cursos todavía.</div>';
+    return;
+  }
+
+  var etiquetasTipo = { medica: 'Médica', personal: 'Personal', academica: 'Académica', otro: 'Otro' };
+  var etiquetasEstado = { pendiente: ['Pendiente', 'badge-yellow'], aprobada: ['Aprobada', 'badge-green'], rechazada: ['Rechazada', 'badge-red'] };
+
+  cont.innerHTML = justificacionesData.map(function (j) {
+    var estadoInfo = etiquetasEstado[j.estado] || ['—', 'badge-gray'];
+    var acciones = j.estado === 'pendiente'
+      ? '<button class="btn btn-dark btn-sm" onclick="aprobarJustificacion(' + j.id + ')" style="margin-right:8px">Aprobar</button>'
+        + '<button class="btn btn-ghost btn-sm" onclick="abrirModalRechazoJustificacion(' + j.id + ')">Rechazar</button>'
+      : (j.comentarioRevisor ? '<div style="font-size:12px;color:var(--gray-500)">' + j.comentarioRevisor + '</div>' : '');
+
+    return '<div class="card" id="just-card-' + j.id + '" style="margin-bottom:12px;padding:16px 18px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">'
+      + '<div><div class="student-name">' + j.alumno + '</div>'
+      + '<div style="font-size:12px;color:var(--gray-500)">' + j.curso + ' — ' + j.materia + ' — ' + j.fecha + '</div></div>'
+      + '<span class="badge ' + estadoInfo[1] + '" id="just-badge-' + j.id + '">' + estadoInfo[0] + '</span>'
+      + '</div>'
+      + '<div style="font-size:13px;color:var(--gray-700);margin-bottom:6px"><b>' + (etiquetasTipo[j.tipo] || j.tipo) + ':</b> ' + j.motivo + '</div>'
+      + '<div style="font-size:11px;color:var(--gray-400);margin-bottom:10px">Enviado por ' + j.enviadoPor + '</div>'
+      + '<div id="just-acciones-' + j.id + '">' + acciones + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+var justificacionRechazoActual = null;
+
+function abrirModalRechazoJustificacion(id) {
+  justificacionRechazoActual = id;
+  var textarea = document.getElementById('rechazo-just-comentario');
+  if (textarea) textarea.value = '';
+  document.getElementById('modal-rechazo-just-overlay').style.display = 'flex';
+}
+
+function cerrarModalRechazoJustificacion() {
+  justificacionRechazoActual = null;
+  document.getElementById('modal-rechazo-just-overlay').style.display = 'none';
+}
+
+function aprobarJustificacion(id) {
+  var body = new URLSearchParams({ justificacion_id: id, csrf_token: SD.csrfToken });
+  fetch('index.php?page=preceptor/aprobar_justificacion_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) { showToast(data.error || 'No se pudo aprobar.', 'error'); return; }
+      var j = justificacionesData.find(function (x) { return x.id === id; });
+      if (j) j.estado = 'aprobada';
+      var badge = document.getElementById('just-badge-' + id);
+      if (badge) { badge.textContent = 'Aprobada'; badge.className = 'badge badge-green'; }
+      var acc = document.getElementById('just-acciones-' + id);
+      if (acc) acc.innerHTML = '';
+      showToast('Justificación aprobada. La falta queda marcada como justificada.', 'success');
+    })
+    .catch(function () { showToast('No se pudo aprobar. Verificá tu conexión.', 'error'); });
+}
+
+function confirmarRechazoJustificacion() {
+  if (!justificacionRechazoActual) return;
+  var comentario = (document.getElementById('rechazo-just-comentario') || {}).value || '';
+  if (!comentario.trim()) { showToast('Ingresá un motivo de rechazo.', 'warning'); return; }
+
+  var id = justificacionRechazoActual;
+  var btn = document.getElementById('btn-confirmar-rechazo-just');
+  if (btn) btn.disabled = true;
+
+  var body = new URLSearchParams({ justificacion_id: id, comentario: comentario.trim(), csrf_token: SD.csrfToken });
+  fetch('index.php?page=preceptor/rechazar_justificacion_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (btn) btn.disabled = false;
+      if (!data.ok) { showToast(data.error || 'No se pudo rechazar.', 'error'); return; }
+      cerrarModalRechazoJustificacion();
+      var j = justificacionesData.find(function (x) { return x.id === id; });
+      if (j) j.estado = 'rechazada';
+      var badge = document.getElementById('just-badge-' + id);
+      if (badge) { badge.textContent = 'Rechazada'; badge.className = 'badge badge-red'; }
+      var acc = document.getElementById('just-acciones-' + id);
+      if (acc) acc.innerHTML = '<div style="font-size:12px;color:var(--gray-500)">' + comentario.trim() + '</div>';
+      showToast('Justificación rechazada.', 'success');
+    })
+    .catch(function () {
+      if (btn) btn.disabled = false;
+      showToast('No se pudo rechazar. Verificá tu conexión.', 'error');
+    });
+}
+
+// ─── RETIROS ───
+function renderRetiros() {
+  var cont = document.getElementById('retiros-list');
+  if (!cont) return;
+
+  if (retirosData.length === 0) {
+    cont.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--gray-400)">Todavía no se tomó ninguna asistencia hoy en tus cursos.</div>';
+    return;
+  }
+
+  cont.innerHTML = retirosData.map(function (r) {
+    var yaRetirado = r.estado === 'retirado_anticipado';
+    var accion;
+    if (yaRetirado) {
+      accion = '<span class="badge badge-blue">Retirado' + (r.horaRetiro ? ' a las ' + r.horaRetiro : '') + '</span>';
+    } else if (!r.editable) {
+      accion = '<span style="font-size:12px;color:var(--gray-400)">Fuera del período editable</span>';
+    } else {
+      accion = '<button class="btn btn-ghost btn-sm" onclick="marcarRetiro(' + r.detalleId + ')">Marcar retiro</button>';
+    }
+    return '<div class="card" id="retiro-card-' + r.detalleId + '" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:14px 18px">'
+      + '<div><div class="student-name">' + r.alumno + '</div>'
+      + '<div style="font-size:12px;color:var(--gray-500)">' + r.curso + ' — ' + r.materia + ' (' + r.horario + ')</div></div>'
+      + '<div id="retiro-accion-' + r.detalleId + '">' + accion + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function marcarRetiro(detalleId) {
+  var body = new URLSearchParams({ detalle_id: detalleId, csrf_token: SD.csrfToken });
+  fetch('index.php?page=preceptor/registrar_retiro_ajax', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) { showToast(data.error || 'No se pudo registrar el retiro.', 'error'); return; }
+      var r = retirosData.find(function (x) { return x.detalleId === detalleId; });
+      if (r) { r.estado = 'retirado_anticipado'; r.horaRetiro = data.horaRetiro; }
+      var el = document.getElementById('retiro-accion-' + detalleId);
+      if (el) el.innerHTML = '<span class="badge badge-blue">Retirado' + (data.horaRetiro ? ' a las ' + data.horaRetiro : '') + '</span>';
+      showToast('Retiro anticipado registrado.', 'success');
+    })
+    .catch(function () { showToast('No se pudo registrar el retiro. Verificá tu conexión.', 'error'); });
 }
 
 // ─── INICIALIZACIÓN ───

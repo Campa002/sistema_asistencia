@@ -281,7 +281,7 @@
         campo.disabled = false;
         campo.focus();
         if (!data.ok) {
-          alert(data.error || 'No se pudo enviar el mensaje.');
+          showToast(data.error || 'No se pudo enviar el mensaje.', 'error');
           campo.value = texto;
           return;
         }
@@ -289,10 +289,11 @@
         conv.preview = texto;
         renderChatMensajes(conv);
         renderConversaciones();
+        showToast('Mensaje enviado correctamente.', 'success');
       })
       .catch(function () {
         campo.disabled = false;
-        alert('No se pudo enviar el mensaje. Verificá tu conexión.');
+        showToast('No se pudo enviar el mensaje. Verificá tu conexión.', 'error');
         campo.value = texto;
       });
   };

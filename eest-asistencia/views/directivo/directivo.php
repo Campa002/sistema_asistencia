@@ -25,9 +25,112 @@ header('Pragma: no-cache');
 <link rel="shortcut icon" href="../public/assets/img/logo.webp" type="image/x-icon">
 <div id="directivo-portal-root">
 
+<!-- Notificaciones propias (reemplaza alert()/confirm() del navegador) -->
+<div id="toast-container" class="toast-container"></div>
 
 <!-- Overlay para mobile -->
 <div class="overlay-sidebar" id="overlay-sidebar" onclick="cerrarSidebar()"></div>
+
+<!-- Modal: motivo de rechazo de una solicitud -->
+<div class="modal-overlay-directivo" id="modal-rechazo-overlay" style="display:none;">
+  <div class="modal-directivo">
+    <div class="modal-directivo__titulo">Rechazar solicitud</div>
+    <div class="modal-directivo__campo">
+      <label for="rechazo-motivo">Motivo del rechazo</label>
+      <textarea id="rechazo-motivo" rows="3" placeholder="Explicá brevemente por qué se rechaza..."></textarea>
+    </div>
+    <div class="modal-directivo__acciones">
+      <button class="boton-secundario" onclick="cerrarModalRechazo()">Cancelar</button>
+      <button class="boton-primario" style="background:var(--rojo)" onclick="confirmarRechazoSolicitud()">Rechazar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: asignar preceptor a un reemplazo -->
+<div class="modal-overlay-directivo" id="modal-asignar-overlay" style="display:none;">
+  <div class="modal-directivo">
+    <div class="modal-directivo__titulo">Asignar reemplazo</div>
+    <div class="modal-directivo__campo">
+      <label for="asignar-preceptor-select">Preceptor disponible</label>
+      <select id="asignar-preceptor-select"><option value="">Cargando...</option></select>
+    </div>
+    <div class="modal-directivo__acciones">
+      <button class="boton-secundario" onclick="cerrarModalAsignar()">Cancelar</button>
+      <button class="boton-primario" id="btn-confirmar-asignar" onclick="confirmarAsignarReemplazo()">Asignar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: editar perfil -->
+<div class="modal-overlay-directivo" id="modal-perfil-overlay" style="display:none;">
+  <div class="modal-directivo">
+    <div class="modal-directivo__titulo">Editar perfil</div>
+    <div class="modal-directivo__campo">
+      <label for="perfil-nombre">Nombre</label>
+      <input type="text" id="perfil-nombre">
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="perfil-apellido">Apellido</label>
+      <input type="text" id="perfil-apellido">
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="perfil-email">Correo electrónico</label>
+      <input type="email" id="perfil-email">
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="perfil-telefono">Teléfono de contacto</label>
+      <input type="text" id="perfil-telefono">
+    </div>
+    <div class="modal-directivo__acciones">
+      <button class="boton-secundario" onclick="cerrarModalPerfil()">Cancelar</button>
+      <button class="boton-primario" id="btn-guardar-perfil" onclick="guardarPerfilDirectivo()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: nuevo reemplazo -->
+<div class="modal-overlay-directivo" id="modal-nuevo-reemplazo-overlay" style="display:none;">
+  <div class="modal-directivo">
+    <div class="modal-directivo__titulo">Nuevo reemplazo</div>
+    <div class="modal-directivo__campo">
+      <label for="nr-fecha">Fecha</label>
+      <input type="date" id="nr-fecha" value="<?= e(date('Y-m-d')) ?>" onchange="onCambioFechaOCursoNuevoReemplazo()">
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="nr-curso">Curso</label>
+      <select id="nr-curso" onchange="onCambioFechaOCursoNuevoReemplazo()">
+        <option value="">Elegí un curso...</option>
+        <?php foreach ($portal['cursosTodos'] as $c): ?>
+          <option value="<?= (int) $c['id'] ?>"><?= e($c['anio']) ?>° <?= e($c['division']) ?>°</option>
+        <?php endforeach; ?>
+      </select>
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="nr-materia">Materia / horario agendado ese día</label>
+      <select id="nr-materia"><option value="">Elegí primero fecha y curso...</option></select>
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="nr-preceptor">Preceptor titular (ausente)</label>
+      <select id="nr-preceptor"><option value="">Elegí primero fecha y curso...</option></select>
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="nr-prioridad">Prioridad</label>
+      <select id="nr-prioridad">
+        <option value="normal">Normal</option>
+        <option value="alta">Alta</option>
+        <option value="urgente">Urgente</option>
+      </select>
+    </div>
+    <div class="modal-directivo__campo">
+      <label for="nr-motivo">Motivo</label>
+      <textarea id="nr-motivo" rows="2" placeholder="Ej: licencia médica, capacitación..."></textarea>
+    </div>
+    <div class="modal-directivo__acciones">
+      <button class="boton-secundario" onclick="cerrarModalNuevoReemplazo()">Cancelar</button>
+      <button class="boton-primario" id="btn-crear-reemplazo" onclick="confirmarNuevoReemplazo()">Crear</button>
+    </div>
+  </div>
+</div>
 
 <!-- Barra lateral -->
 <aside class="barra-lateral" id="barra-lateral">
@@ -177,7 +280,7 @@ header('Pragma: no-cache');
                   <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
                   <span class="acceso-rapido__texto">Buscar Alumno</span>
                 </div>
-                <div class="acceso-rapido">
+                <div class="acceso-rapido" style="cursor:pointer" onclick="mostrarSeccion('reemplazos', document.querySelectorAll('.nav__item')[2]); abrirModalNuevoReemplazo();">
                   <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
                   <span class="acceso-rapido__texto">Nuevo Reemplazo</span>
                 </div>
@@ -298,18 +401,24 @@ header('Pragma: no-cache');
                   $estadoClase = ['pendiente' => 'pendiente', 'aprobado' => 'completo', 'rechazado' => 'sin-asignar'][$s['estado']] ?? 'pendiente';
                   $estadoLabel = ucfirst($s['estado']);
                 ?>
-                  <tr>
+                  <tr id="solicitud-row-<?= (int) $s['id'] ?>">
                     <td><strong><?= e(trim($s['nombre'] . ' ' . $s['apellido'])) ?></strong></td>
                     <td><?= e($s['dni'] ?? '—') ?></td>
                     <td><div><?= e($s['email']) ?></div><div style="font-size:12px; color:var(--gris-texto);"><?= e($s['telefono'] ?? '—') ?></div></td>
                     <td><?php if ($s['tipo'] === 'alumno'): ?><span class="insignia insignia--azul">Estudiante</span><?php else: ?><span class="insignia insignia--gris">Padre/Tutor</span><?php endif; ?></td>
                     <td><div><?= e($fechaSol->format('d')) ?></div><div><?= e(format_date_short_argentina($s['created_at'])) ?></div></td>
-                    <td><span class="indicador-estado indicador-estado--<?= e($estadoClase) ?>"><?= e($estadoLabel) ?></span></td>
-                    <td>
-                      <button class="btn-accion btn-accion--ver"><svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg></button>
+                    <td id="solicitud-estado-<?= (int) $s['id'] ?>"><span class="indicador-estado indicador-estado--<?= e($estadoClase) ?>"><?= e($estadoLabel) ?></span></td>
+                    <td id="solicitud-acciones-<?= (int) $s['id'] ?>">
                       <?php if ($s['estado'] === 'pendiente'): ?>
-                        <button class="btn-accion btn-accion--aprobar"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></button>
-                        <button class="btn-accion btn-accion--rechazar"><svg viewBox="0 0 24 24"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg></button>
+                        <button class="btn-accion btn-accion--aprobar" title="Aprobar" onclick="aprobarSolicitud(<?= (int) $s['id'] ?>)"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg></button>
+                        <button class="btn-accion btn-accion--rechazar" title="Rechazar" onclick="abrirModalRechazo(<?= (int) $s['id'] ?>)"><svg viewBox="0 0 24 24"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg></button>
+                      <?php else: ?>
+                        <span style="font-size:12px;color:var(--gris-texto)">
+                          <?= $s['estado'] === 'aprobado' ? 'Aprobada' : 'Rechazada' ?>
+                          <?php if (!empty($s['fecha_revision'])): ?>
+                            — <?= e(format_date_short_argentina($s['fecha_revision'])) ?>
+                          <?php endif; ?>
+                        </span>
                       <?php endif; ?>
                     </td>
                   </tr>
@@ -334,7 +443,7 @@ header('Pragma: no-cache');
           <div class="seccion__titulo">Gestion de Reemplazos</div>
           <div class="seccion__subtitulo">Supervise y asigne coberturas para las ausencias del personal.</div>
         </div>
-        <button class="boton-primario">
+        <button class="boton-primario" onclick="abrirModalNuevoReemplazo()">
           <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
           Nuevo Reemplazo
         </button>
@@ -394,18 +503,19 @@ header('Pragma: no-cache');
                 <th>MOTIVO</th>
                 <th>PRIORIDAD</th>
                 <th>ESTADO</th>
+                <th>ACCIONES</th>
               </tr>
             </thead>
             <tbody>
               <?php if (empty($portal['reemplazos'])): ?>
-                <tr><td colspan="7" style="text-align:center;color:var(--gris-texto)">No hay reemplazos registrados.</td></tr>
+                <tr><td colspan="8" style="text-align:center;color:var(--gris-texto)">No hay reemplazos registrados.</td></tr>
               <?php else: foreach ($portal['reemplazos'] as $r):
                   $iniciales = mb_strtoupper(mb_substr($r['titular_nombre'], 0, 1) . mb_substr($r['titular_apellido'], 0, 1));
                   $prioridadClase = ['normal' => 'baja', 'alta' => 'normal', 'urgente' => 'critica'][$r['prioridad']] ?? 'normal';
                   $estadoClase = ['sin_asignar' => 'sin-asignar', 'asignado' => 'asignado', 'realizado' => 'completo', 'cancelado' => 'sin-asignar'][$r['estado']] ?? 'sin-asignar';
                   $estadoLabel = ['sin_asignar' => 'Sin Asignar', 'asignado' => 'Asignado', 'realizado' => 'Realizado', 'cancelado' => 'Cancelado'][$r['estado']] ?? ucfirst($r['estado']);
               ?>
-                <tr>
+                <tr id="reemplazo-row-<?= (int) $r['id'] ?>">
                   <td>
                     <div style="display:flex; align-items:center; gap:10px;">
                       <div class="avatar-iniciales"><?= e($iniciales) ?></div>
@@ -413,11 +523,44 @@ header('Pragma: no-cache');
                     </div>
                   </td>
                   <td><?= e($r['anio']) ?>° <?= e($r['division']) ?>° <?= $r['especialidad_nombre'] ? '- ' . e($r['especialidad_nombre']) : '' ?></td>
-                  <td><?= e(ucfirst($r['turno'])) ?></td>
-                  <td><strong><?= e(format_date_short_argentina($r['fecha'])) ?></strong></td>
+                  <td>
+                    <?= e(ucfirst($r['turno'])) ?>
+                    <div style="font-size:11px; color:var(--gris-texto);"><?= e($r['materia_nombre'] ?: 'Sin materia puntual') ?></div>
+                  </td>
+                  <td>
+                    <strong><?= e(format_date_short_argentina($r['fecha'])) ?></strong>
+                    <?php if (in_array($r['estado'], ['sin_asignar', 'asignado'], true)): ?>
+                      <div style="font-size:11px; color:<?= $r['urgenciaMinutos'] < 0 ? 'var(--rojo)' : 'var(--gris-texto)' ?>; font-weight:<?= $r['urgenciaMinutos'] < 0 ? '700' : '400' ?>">
+                        <?= e($r['horaClase']) ?> hs — <?= e($r['urgenciaTexto']) ?>
+                      </div>
+                    <?php endif; ?>
+                  </td>
                   <td><?= e($r['motivo'] ?: '—') ?></td>
                   <td><span class="prioridad prioridad--<?= e($prioridadClase) ?>"><?= e(ucfirst($r['prioridad'])) ?></span></td>
-                  <td><span class="indicador-estado indicador-estado--<?= e($estadoClase) ?>"><?= e($estadoLabel) ?></span></td>
+                  <td id="reemplazo-estado-<?= (int) $r['id'] ?>"><span class="indicador-estado indicador-estado--<?= e($estadoClase) ?>"><?= e($estadoLabel) ?></span></td>
+                  <td id="reemplazo-acciones-<?= (int) $r['id'] ?>">
+                    <?php if ($r['estado'] === 'sin_asignar'): ?>
+                      <button class="boton-secundario" style="padding:6px 12px;font-size:12px"
+                        onclick="abrirModalAsignar(<?= (int) $r['id'] ?>)">
+                        Asignar
+                      </button>
+                      <button class="btn-accion btn-accion--rechazar" title="Cancelar reemplazo" onclick="cancelarReemplazo(<?= (int) $r['id'] ?>)">
+                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>
+                      </button>
+                    <?php elseif ($r['estado'] === 'asignado'): ?>
+                      <div style="font-size:12px;color:var(--gris-texto); margin-bottom:6px;">
+                        Cubre: <?= e($r['reemplazante_apellido'] . ', ' . $r['reemplazante_nombre']) ?>
+                      </div>
+                      <button class="boton-secundario" style="padding:6px 12px;font-size:12px;margin-right:6px;" title="Marcar como realizado" onclick="marcarRealizadoReemplazo(<?= (int) $r['id'] ?>)">
+                        Realizado
+                      </button>
+                      <button class="btn-accion btn-accion--rechazar" title="Cancelar reemplazo" onclick="cancelarReemplazo(<?= (int) $r['id'] ?>)">
+                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg>
+                      </button>
+                    <?php else: ?>
+                      <span style="font-size:12px;color:var(--gris-texto)">—</span>
+                    <?php endif; ?>
+                  </td>
                 </tr>
               <?php endforeach; endif; ?>
             </tbody>
@@ -564,7 +707,7 @@ header('Pragma: no-cache');
                 'recordatorio' => ['clase' => 'reemplazo', 'label' => 'Recordatorio', 'icono' => 'gris'],
               ][$n['tipo']] ?? ['clase' => 'sistema', 'label' => ucfirst($n['tipo']), 'icono' => 'gris'];
           ?>
-            <div class="item-notificacion" <?= $leida ? 'style="background-color: #fafafa;"' : '' ?>>
+            <div class="item-notificacion" <?= $leida ? 'style="background-color: #fafafa;"' : 'style="cursor:pointer"' ?> <?= $leida ? '' : 'onclick="marcarNotificacionLeida(' . (int) $n['id'] . ', this)"' ?>>
               <div class="item-notificacion__punto-lectura <?= $leida ? 'item-notificacion__punto-lectura--leida' : 'item-notificacion__punto-lectura--no-leida' ?>"></div>
               <div class="item-notificacion__icono-contenedor item-notificacion__icono-contenedor--<?= $tipoInfo['icono'] === 'rojo' ? 'rojo-claro' : 'gris' ?>">
                 <svg viewBox="0 0 24 24" fill="<?= $tipoInfo['icono'] === 'rojo' ? 'var(--rojo)' : 'var(--gris-texto)' ?>"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
@@ -625,7 +768,7 @@ header('Pragma: no-cache');
               </div>
             </div>
             <div class="botones-perfil">
-              <button class="btn-editar-perfil">
+              <button class="btn-editar-perfil" onclick="abrirModalPerfil()">
                 <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
                 Editar Perfil
               </button>
@@ -690,7 +833,14 @@ header('Pragma: no-cache');
       'ausentesManana' => $ausentesManana,
       'presentesTarde' => $presentesTarde,
       'ausentesTarde' => $ausentesTarde,
+      'csrfToken' => csrf_token(),
+      'usuario' => [
+        'nombre' => $nombre,
+        'apellido' => $apellido,
+        'email' => $email,
+        'telefono' => $usuario['telefono'] ?? '',
+      ],
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
   ?>;
 </script>
-<script src="../public/assets/js/directivo.js?v=2"></script>
+<script src="../public/assets/js/directivo.js?v=3"></script>

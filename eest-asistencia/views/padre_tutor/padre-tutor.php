@@ -7,10 +7,13 @@ $apellido = $_SESSION['apellido'] ?? '';
 $nombre_completo = trim($nombre . ' ' . $apellido);
 
 $padreTutorId = (int) $_SESSION['usuario_id'];
-$portal = PadreTutorController::portalData($padreTutorId);
+$alumnoIdSeleccionado = isset($_GET['alumno_id']) ? (int) $_GET['alumno_id'] : null;
+$portal = PadreTutorController::portalData($padreTutorId, $alumnoIdSeleccionado);
 $usuario = $portal['usuario'];
 ?>
 <link rel="stylesheet" href="../public/assets/css/padretutor.css">
+<link rel="stylesheet" href="../public/assets/css/toast.css">
+<div id="toast-container" class="toast-container"></div>
 <div id="pt-portal-root">
 
 
@@ -24,9 +27,10 @@ $usuario = $portal['usuario'];
     <div class="notif-p-item"><div class="notif-p-body">Sin notificaciones nuevas.</div></div>
   <?php else: foreach ($portal['notificaciones'] as $n):
       $emoji = ['alerta' => '⚠️', 'aviso' => '📅', 'recordatorio' => '🔔'][$n['tipo']] ?? '🔔';
+      $leida = (bool) $n['leida'];
   ?>
-    <div class="notif-p-item">
-      <div class="notif-p-title"><?= $emoji ?> <?= e($n['titulo']) ?></div>
+    <div class="notif-p-item" id="pt-notif-<?= (int) $n['id'] ?>" style="<?= $leida ? '' : 'cursor:pointer;background:#F1F5FB;' ?>" <?= $leida ? '' : 'onclick="marcarNotificacionLeidaPT(' . (int) $n['id'] . ')"' ?>>
+      <div class="notif-p-title"><?= $emoji ?> <?= e($n['titulo']) ?><?= $leida ? '' : ' <span style="color:var(--blue-btn,#3498DB);font-size:11px;">● nueva</span>' ?></div>
       <div class="notif-p-body"><?= e($n['contenido']) ?></div>
       <div class="notif-p-time"><?= e(format_date_short_argentina($n['created_at'])) ?></div>
     </div>
@@ -78,6 +82,12 @@ $usuario = $portal['usuario'];
         <?php $noLeidosPT = count(array_filter($portal['msgs'], fn($m) => $m['unread'])); ?>
         <?php if ($noLeidosPT > 0): ?><span class="badge-notif"><?= e($noLeidosPT) ?></span><?php endif; ?>
       </div>
+      <?php if (!$portal['sinAlumnoVinculado']): ?>
+      <div class="nav-item" id="nav-justificaciones" onclick="showView('justificaciones')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/><line x1="9" y1="11" x2="11" y2="11"/></svg>
+        Justificaciones
+      </div>
+      <?php endif; ?>
       <div class="nav-item" id="nav-perfil" onclick="showView('perfil')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
         Mi Perfil
@@ -120,18 +130,31 @@ $usuario = $portal['usuario'];
       <div class="dash-sub">Resumen de asistencia de <?= e($alumno['nombre']) ?></div>
 
       <!-- Alumno selector -->
-      <div class="alumno-selector" <?= count($portal['vinculados']) > 1 ? 'onclick="alert(\'Tenés ' . count($portal['vinculados']) . ' alumnos vinculados. El selector para cambiar entre ellos todavía no está disponible.\')"' : '' ?>>
-        <div class="alumno-avatar">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-          <div class="dot"></div>
-        </div>
-        <div class="alumno-info">
-          <div class="alumno-name"><?= e($nombreAlumno) ?></div>
-          <div class="alumno-course"><?= e($cursoLabel) ?></div>
+      <div style="position:relative;">
+        <div class="alumno-selector" <?= count($portal['vinculados']) > 1 ? 'onclick="toggleSelectorAlumno()"' : '' ?>>
+          <div class="alumno-avatar">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            <div class="dot"></div>
+          </div>
+          <div class="alumno-info">
+            <div class="alumno-name"><?= e($nombreAlumno) ?></div>
+            <div class="alumno-course"><?= e($cursoLabel) ?></div>
+          </div>
+          <?php if (count($portal['vinculados']) > 1): ?>
+          <div class="alumno-chevron">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <?php endif; ?>
         </div>
         <?php if (count($portal['vinculados']) > 1): ?>
-        <div class="alumno-chevron">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        <div id="selector-alumno-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;margin-top:6px;background:var(--white,#fff);border:1px solid #E9ECEF;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;overflow:hidden;">
+          <?php foreach ($portal['vinculados'] as $v): ?>
+            <a href="index.php?page=padre_tutor/padre-tutor&alumno_id=<?= (int) $v['alumno_id'] ?>"
+               style="display:block;padding:11px 14px;font-size:13.5px;color:#1A2B4C;text-decoration:none;<?= (int) $v['alumno_id'] === (int) $alumno['id'] ? 'background:#F1F5FB;font-weight:700;' : '' ?>">
+              <?= e($v['apellido'] . ', ' . $v['nombre']) ?>
+              <span style="color:#6C757D;font-weight:400;"> — <?= e(ucfirst($v['relacion'])) ?></span>
+            </a>
+          <?php endforeach; ?>
         </div>
         <?php endif; ?>
       </div>
@@ -333,6 +356,25 @@ $usuario = $portal['usuario'];
       </div>
     </section>
 
+    <?php if (!$portal['sinAlumnoVinculado']): ?>
+    <!-- ══════════ JUSTIFICACIONES ══════════ -->
+    <section class="view" id="view-justificaciones">
+      <div class="eyebrow">Portal Familiar</div>
+      <div class="page-title">Justificaciones</div>
+      <div class="page-subtitle">Justificá una ausencia real de <?= e($alumno['nombre']) ?> o revisá el estado de las que ya enviaste.</div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <div class="section-title">Ausencias sin justificar</div>
+        <div id="ausencias-justificables-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Justificaciones enviadas</div>
+        <div id="justificaciones-enviadas-list"></div>
+      </div>
+    </section>
+    <?php endif; ?>
+
     <!-- ══════════ PERFIL ══════════ -->
     <section class="view" id="view-perfil">
       <div class="page-title">Mi Perfil</div>
@@ -433,6 +475,27 @@ $usuario = $portal['usuario'];
   </main>
 </div>
 
+<!-- Modal: enviar justificación -->
+<div class="confirm-overlay" id="modal-justificar-overlay" style="display:none;">
+  <div class="confirm-modal" style="max-width:380px;text-align:left;">
+    <div class="confirm-modal__titulo" style="text-align:left;">Justificar ausencia</div>
+    <div id="just-detalle-info" style="font-size:13px;color:#6C757D;margin-bottom:14px;"></div>
+    <label style="display:block;font-size:12px;font-weight:600;color:#6C757D;text-transform:uppercase;margin-bottom:6px;">Tipo</label>
+    <select id="just-tipo" style="width:100%;border:1px solid #dfe3e8;border-radius:8px;padding:9px 12px;font-size:14px;margin-bottom:12px;">
+      <option value="medica">Médica</option>
+      <option value="personal" selected>Personal</option>
+      <option value="academica">Académica</option>
+      <option value="otro">Otro</option>
+    </select>
+    <label style="display:block;font-size:12px;font-weight:600;color:#6C757D;text-transform:uppercase;margin-bottom:6px;">Motivo</label>
+    <textarea id="just-motivo" rows="3" style="width:100%;border:1px solid #dfe3e8;border-radius:8px;padding:9px 12px;font-size:14px;margin-bottom:16px;" placeholder="Ej: certificado médico adjunto..."></textarea>
+    <div class="confirm-modal__acciones">
+      <button type="button" class="confirm-modal__cancelar" onclick="cerrarModalJustificar()">Cancelar</button>
+      <button type="button" class="confirm-modal__aceptar" style="background:var(--blue-btn,#3498DB)" id="btn-enviar-justificacion" onclick="enviarJustificacion()">Enviar</button>
+    </div>
+  </div>
+</div>
+
 <!-- BOTTOM NAV -->
 <nav class="bottom-nav" id="bottom-nav">
   <button class="bottom-nav-item active" id="bnav-resumen" onclick="showView('resumen');syncBNav('resumen')">
@@ -462,10 +525,25 @@ $usuario = $portal['usuario'];
       'anioInicial' => $portal['sinAlumnoVinculado'] ? (int) date('Y') : $portal['anioInicial'],
       'mesInicial' => $portal['sinAlumnoVinculado'] ? (int) date('n') : $portal['mesInicial'],
       'msgs' => $portal['msgs'],
+      'ausenciasJustificables' => $portal['sinAlumnoVinculado'] ? [] : array_map(fn($a) => [
+        'detalleId' => (int) $a['detalle_id'],
+        'fecha' => $a['fecha'],
+        'materia' => $a['materia_nombre'],
+      ], $portal['ausenciasJustificables']),
+      'justificacionesEnviadas' => $portal['sinAlumnoVinculado'] ? [] : array_map(fn($j) => [
+        'id' => (int) $j['id'],
+        'fecha' => $j['fecha'],
+        'materia' => $j['materia_nombre'],
+        'tipo' => $j['tipo'],
+        'motivo' => $j['motivo'],
+        'estado' => $j['estado'],
+        'comentarioRevisor' => $j['comentario_revisor'],
+      ], $portal['justificacionesEnviadas']),
       'csrfToken' => csrf_token(),
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
   ?>;
 </script>
-<script src="../public/assets/js/padretutor.js?v=2"></script>
+<script src="../public/assets/js/toast.js"></script>
+<script src="../public/assets/js/padretutor.js?v=3"></script>
 
 </div>
